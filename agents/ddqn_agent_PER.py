@@ -38,6 +38,8 @@ class DDQNAgentPER():
         self.DQN = model
         self.tau = tau
         self.alpha = alpha
+        self.scaler = torch.amp.GradScaler("cuda")
+        self.learn_step = 0
 
         
         # Q-Network
@@ -64,6 +66,8 @@ class DDQNAgentPER():
     	
         # Use PER
         with torch.no_grad():
+
+            """
             ###state_tensor = torch.from_numpy(state).unsqueeze(0).to(self.device).half()
             state_tensor = torch.from_numpy(state).unsqueeze(0).float().to(self.device)
             ###next_state_tensor = torch.from_numpy(next_state).unsqueeze(0).to(self.device).half()
@@ -73,10 +77,21 @@ class DDQNAgentPER():
             current_q = self.policy_net(state_tensor)[0, action]
             next_q = self.target_net(next_state_tensor).max(1)[0].item()
             target_q = reward + (self.gamma * next_q * (1 - done))
+            """
+
+            state_tensor = torch.from_numpy(state).unsqueeze(0).to(self.device).float()#.half()
+            next_state_tensor = torch.from_numpy(next_state).unsqueeze(0).to(self.device).float()#.half()
+            
+            #self.policy_net#.half()
+            #self.target_net#.half()
+            
+            current_q = self.policy_net(state_tensor)[0, action]
+            next_q = self.target_net(next_state_tensor).max(1)[0].item()
+            target_q = reward + (self.gamma * next_q * (1 - done))
             
             # Detach values before computing error
             ###td_error = abs(current_q.detach() - target_q).cpu().numpy()
-            td_error = abs(current_q.float().detach() - torch.tensor(target_q).float()).cpu().numpy()
+            td_error = abs(current_q.float().detach() - torch.tensor(target_q).float()).item()
 
         # Store in PER buffer
         self.memory.add(state, action, reward, next_state, done, td_error)
@@ -93,17 +108,26 @@ class DDQNAgentPER():
                 self.learn(experiences)
         """
 
+        """
         if self.t_step == 0 and len(self.memory) > self.replay_after:
             experiences = self.memory.sample(beta=min(1.0, 0.4 + self.t_step * (1.0 - 0.4) / 10000))
             self.learn(experiences)
+        """
+
+        if self.t_step == 0 and len(self.memory) > self.replay_after:
+            beta = min(1.0, 0.4 + self.learn_step * (1.0 - 0.4) / 100000)
+            experiences = self.memory.sample(beta=beta)
+            self.learn(experiences)
+            self.learn_step += 1
                 
     def act(self, state, eps=0.):
         """Returns actions for given state as per current policy."""
         
         #state = torch.from_numpy(state).unsqueeze(0).to(self.device)
-        state = torch.from_numpy(state).unsqueeze(0).to(self.device).half() # FP16 - HALF PRECISION
+        state = torch.from_numpy(state).unsqueeze(0).to(self.device).float()#.half() # FP16 - HALF PRECISION
 
         self.policy_net.eval()
+
         with torch.no_grad():
             action_values = self.policy_net(state)
         self.policy_net.train()
@@ -115,8 +139,6 @@ class DDQNAgentPER():
             return random.choice(np.arange(self.action_size))
         
     def learn(self, experiences):
-
-        self.scaler = torch.amp.GradScaler("cuda")
 
         # Unpack experiences
         states, actions, rewards, next_states, dones, indices, weights = experiences
@@ -173,7 +195,7 @@ class DDQNAgentPER():
         ###self.optimizer.step()
 
         # Update priorities in the PER buffer
-        td_errors = abs(Q_expected - Q_targets).detach().cpu().numpy()
+        td_errors = (Q_expected - Q_targets).detach().abs().cpu().numpy()
         self.memory.update_priorities(indices, td_errors)
 
         self.soft_update(self.policy_net, self.target_net, self.tau)
