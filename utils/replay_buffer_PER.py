@@ -22,20 +22,27 @@ class ReplayBufferPER:
         self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
         self.seed = random.seed(seed)
         self.device = device
+        self.buffer_size = buffer_size
         self.alpha = alpha
         self.position = 0
     
-    def add(self, state, action, reward, next_state, done, td_error):
+    def add(self, state, action, reward, next_state, done, td_error=None):
         """Add a new experience to memory with max priority."""
-        max_priority = self.priorities.max() if self.memory else 1.0
+        ##max_priority = self.priorities.max() if self.memory else 1.0
         experience = self.experience(state, action, reward, next_state, done)
         
-        if len(self.memory) < self.memory.maxlen:
+        if len(self.memory) < self.buffer_size:
             self.memory.append(experience)
         else:
             self.memory[self.position] = experience
+
+        if td_error is not None:
+            priority = abs(td_error) + 1e-6
+        else:
+            priority = self.priorities.max() if self.memory else 1.0
         
-        self.priorities[self.position] = max_priority
+        ##self.priorities[self.position] = max_priority
+        self.priorities[self.position] = priority
         self.position = (self.position + 1) % self.memory.maxlen
     
     def sample(self, beta=0.4):
@@ -79,7 +86,10 @@ class ReplayBufferPER:
     
     def update_priorities(self, indices, td_errors):
         """Update priorities based on TD-error."""
-        td_errors = np.nan_to_num(td_errors, nan=1.0, posinf=1.0, neginf=1.0)  # Replace NaNs/Infs
+        if isinstance(td_errors, torch.Tensor):
+            td_errors = td_errors.detach().cpu().numpy()
+
+        td_errors = np.nan_to_num(td_errors, nan=1.0, posinf=1.0, neginf=1.0) # Replace NaNs/Infs with 1.0
         self.priorities[indices] = np.abs(td_errors) + 1e-6  # Small offset to avoid zero priority
 
     

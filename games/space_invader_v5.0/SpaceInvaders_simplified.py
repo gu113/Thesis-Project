@@ -64,10 +64,10 @@ EPS_DECAY = 1000
 alpha = 0.6 # PER prioritization parameter
 
 # Initialize Agent
-agent = DDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, 0.001, UPDATE_EVERY, 5000, DDQNCnn)
+#agent = DDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, 0.001, UPDATE_EVERY, 5000, DDQNCnn)
 
 # Initialize Agent with PER
-#agent = DDQNAgentPER(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn, alpha)
+agent = DDQNAgentPER(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn, alpha)
 
 # Simplified epsilon function
 def epsilon_by_episode(episode):
@@ -78,7 +78,7 @@ def train(n_episodes=100):
 
     start_time = time.time()  # Start timing
     scores = []
-    scores_window = deque(maxlen=1000)
+    scores_window = deque(maxlen=50)
     scaler = torch.amp.GradScaler("cuda")  # Helps with gradient stability
 
     for i_episode in range(1, n_episodes + 1):
