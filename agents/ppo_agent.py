@@ -75,7 +75,7 @@ class PPOAgent():
     def act(self, state):
         """Returns action, log_prob, value for given state as per current policy."""
         
-        state = torch.from_numpy(state).unsqueeze(0).to(self.device)
+        state = torch.from_numpy(state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         action_probs = self.actor_net(state)
         value = self.critic_net(state)
 
@@ -85,7 +85,7 @@ class PPOAgent():
         return action.item(), log_prob, value
         
     def learn(self, next_state):
-        next_state = torch.from_numpy(next_state).unsqueeze(0).to(self.device)
+        next_state = torch.from_numpy(next_state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         next_value = self.critic_net(next_state)
 
         returns        = torch.cat(self.compute_gae(next_value)).detach()
