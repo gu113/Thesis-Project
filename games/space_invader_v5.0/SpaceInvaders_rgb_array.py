@@ -1,5 +1,5 @@
-import time
 import gymnasium as gym
+import ale_py
 from gymnasium import Wrapper
 import random
 import torch

@@ -48,7 +48,7 @@ class A2CAgent():
 
     def step(self, state, log_prob, entropy, reward, done, next_state):
 
-        state = torch.from_numpy(state).unsqueeze(0).to(self.device)
+        state = torch.from_numpy(state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         
         value = self.critic_net(state)
         
@@ -68,7 +68,7 @@ class A2CAgent():
     def act(self, state):
         """Returns action, log_prob, entropy for given state as per current policy."""
         
-        state = torch.from_numpy(state).unsqueeze(0).to(self.device)
+        state = torch.from_numpy(state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         action_probs = self.actor_net(state)
 
         action = action_probs.sample()
@@ -80,7 +80,7 @@ class A2CAgent():
         
         
     def learn(self, next_state):
-        next_state = torch.from_numpy(next_state).unsqueeze(0).to(self.device)
+        next_state = torch.from_numpy(next_state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         next_value = self.critic_net(next_state)
 
         returns = self.compute_returns(next_value, self.gamma)

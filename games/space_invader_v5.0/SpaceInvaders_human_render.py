@@ -1,7 +1,6 @@
-import time
 import gymnasium as gym
+import ale_py
 from gymnasium import Wrapper
-import random
 import torch
 import numpy as np
 from collections import deque
@@ -12,7 +11,8 @@ import math
 import sys
 sys.path.append('./')
 
-from agents import DDQNAgent
+from agents.ddqn_agent import DDQNAgent
+
 from models import DDQNCnn
 from utils.stack_frame import preprocess_frame, stack_frame
 
@@ -36,11 +36,12 @@ class RewardModifierWrapper(Wrapper):
         #    reward -= 20  # Apply penalty if a life is lost
 
         return state, reward, terminated, truncated, info
-    
-env = gym.make('ALE/SpaceInvaders-v5', render_mode='human')
-#env.seed(0)
 
+# Initialize Environment
+env = gym.make('ALE/SpaceInvaders-v5', frameskip=4, render_mode='human')
 env = RewardModifierWrapper(env)
+#env.seed(0)
+#env.unwrapped.seed(0)
 
 # if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
