@@ -9,39 +9,21 @@ import sys
 sys.path.append('./')
 
 # Import Agents
-from agents.dqn_agent import DQNAgent
-from agents.ppo_agent import PPOAgent
-from agents.reinforce_agent import ReinforceAgent
 from agents.ddqn_agent import DDQNAgent
 from agents.ddqn_agent_PER import DDQNAgentPER
 
 # Import Models
 from models import DDQNCnn
-from models import DQNCnn
 
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame
 
-# Custom Reward Modifier Wrapper
-class RewardModifierWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def step(self, action):
-        state, reward, terminated, truncated, info = self.env.step(action)
-
-        # Simple reward shaping
-        if reward > 0:
-            reward += 5  # Encourage hitting enemies
-        if terminated:
-            reward -= 10  # Penalize game over
-        
-        return state, reward, terminated, truncated, info
+# Import Custom Reward Modifier Wrapper
+from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper, ComplexRewardModifierWrapper
 
 # Initialize Environment
 env = gym.make('ALE/SpaceInvaders-v5', frameskip=4)
-env = RewardModifierWrapper(env)
-#env.unwrapped.seed(0)
+env = ComplexRewardModifierWrapper(env)
 
 # Set up Device
 print(torch.cuda.is_available())
@@ -68,14 +50,10 @@ UPDATE_EVERY = 50
 EPS_START = 0.99
 EPS_END = 0.01
 EPS_DECAY = 1000
-alpha = 0.6 # PER prioritization parameter
+#alpha = 0.6 # PER prioritization parameter
 
 # Initialize Agents
 agent = DDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn)
-
-# Initialize PER Agents
-#agent = DDQNAgentPER(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn, alpha)
-
 
 # Simplified epsilon function
 def epsilon_by_episode(episode):

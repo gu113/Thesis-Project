@@ -18,21 +18,8 @@ from models.dqn_cnn import DQNCnn
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame
 
-# Custom Reward Modifier Wrapper
-class RewardModifierWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def step(self, action):
-        state, reward, terminated, truncated, info = self.env.step(action)
-
-        # Simple reward shaping
-        if reward > 0:
-            reward += 5  # Encourage hitting enemies
-        if terminated:
-            reward -= 10  # Penalize game over
-        
-        return state, reward, terminated, truncated, info
+# Import Custom Reward Modifier Wrapper
+from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper
 
 # Initialize Environment
 env = gym.make('ALE/SpaceInvaders-v5', frameskip=4)
