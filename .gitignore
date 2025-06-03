@@ -1,3 +1,7 @@
-# Ignore all trained model files
-trained_models/
-*.pth
+# Ignore trained model files
+trained_models
+.pth
+
+# Ignore Python cache
+__pycache__
+.pyc
