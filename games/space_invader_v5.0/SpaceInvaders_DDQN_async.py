@@ -10,7 +10,7 @@ import sys
 sys.path.append('./')
 
 # Import Agents
-from agents.ddqn_agent_Async import DDQNAgent
+from agents.ddqn_agent import AsyncDDQNAgent
 
 # Import Models
 from models import DDQNCnn
@@ -19,9 +19,9 @@ from models import DDQNCnn
 from utils.stack_frame import preprocess_frame, stack_frame
 
 # Import Custom Reward Modifier Wrapper
-from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper
+from wrappers.SpaceInvaders.rewards import RewardModifierWrapper
 
-NUM_ENVS = 2
+NUM_ENVS = 4
 
 # Initialize Environment Factory
 def make_env():
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     ACTION_SIZE = envs.single_action_space.n
 
     # Initialize Agent
-    agent = DDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn)
+    agent = AsyncDDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn)
 
     # Run Training
     train(n_episodes=1000, envs=envs, agent=agent)

@@ -4,112 +4,169 @@ import torch
 import numpy as np
 from collections import deque
 import time
+import matplotlib.pyplot as plt
 
 import sys
 sys.path.append('./')
 
 # Import Agents
-from agents.ddqn_agent import DDQNAgent
-from agents.ddqn_agent_PER import DDQNAgentPER
+from agents.ddqn_agent import DDQNAgent, DDQNAgentPER, ComplexDDQNAgentPER
 
 # Import Models
-from models import DDQNCnn
+from models.ddqn_cnn import DDQNCnn, ComplexDDQNCnn
 
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame
+from utils.save_load import save_agent, load_agent
 
-# Import Custom Reward Modifier Wrapper
-from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper, ComplexRewardModifierWrapper
+# Import Custom Wrappers
+from wrappers.SpaceInvaders.rewards import ComplexRewardModifierWrapper
+from wrappers.SpaceInvaders.noop_reset import NoopResetEnv
 
 # Initialize Environment
 env = gym.make('ALE/SpaceInvaders-v5', frameskip=4)
 env = ComplexRewardModifierWrapper(env)
+env = NoopResetEnv(env, noop_max=30)
+
 
 # Set up Device
-print(torch.cuda.is_available())
-print(torch.cuda.get_device_name(0))
+print(f"CUDA: {torch.cuda.is_available()}")
+print(f"GPU: {torch.cuda.get_device_name(0)}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def stack_frames(frames, state, is_new=False):
     frame = preprocess_frame(state, (8, -12, -12, 4), 84)
-    #frame = frame.astype(np.float16) / 255.0  # Convert to FP16 and normalize
+    
+    if torch.cuda.is_available():
+        ##frame = torch.from_numpy(frame).to(torch.float32).to(device) / 255.0 # float32 with GPU
+        frame = torch.from_numpy(frame).to(torch.float16).to(device) / 255.0 # float16 with GPU
+    else:
+        ##frame = frame.astype(np.float32) / 255.0  # Use float32 for better precision
+        frame = frame.astype(np.float16) / 255.0  # Use float16 for better speed
+    
     frames = stack_frame(frames, frame, is_new)
 
     return frames
 
+"""
+def plot_scores(scores, episode_num):
+    plt.figure(figsize=(10, 6))
+    plt.plot(scores)
+    plt.title(f'Training Progress - Episodes {episode_num-len(scores)+1} to {episode_num}')
+    plt.xlabel('Episode')
+    plt.ylabel('Score')
+    plt.grid(True)
+    plt.savefig(f'training_progress_{episode_num}.png')
+    plt.close()
+"""
 # Hyperparameters
 INPUT_SHAPE = (4, 84, 84)
 ACTION_SIZE = env.action_space.n
 GAMMA = 0.99
-BUFFER_SIZE = 50000
-BATCH_SIZE = 128
-LR = 0.005
-TAU = 0.005 # 0.001 #0.1
-UPDATE_EVERY = 50
-EPS_START = 0.99
+BUFFER_SIZE = 1000000
+BATCH_SIZE = 64
+LR = 0.0001
+TAU = 0.001
+UPDATE_EVERY = 4
+EPS_START = 0.20
 EPS_END = 0.01
-EPS_DECAY = 1000
-#alpha = 0.6 # PER prioritization parameter
+EPS_DECAY = 500
 
 # Initialize Agents
-agent = DDQNAgent(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 5000, DDQNCnn)
+agent = DDQNAgentPER(INPUT_SHAPE, ACTION_SIZE, 0, device, BUFFER_SIZE, BATCH_SIZE, GAMMA, LR, TAU, UPDATE_EVERY, 10000, DDQNCnn)
+load_agent(agent, device, 'trained_models/SpaceInvaders_PER_10k.pth')
 
-# Simplified epsilon function
-def epsilon_by_episode(episode):
+# Linear Epsilon Decay Function
+def epsilon_by_episode_linear(episode):
     return max(EPS_END, EPS_START - (episode / EPS_DECAY))
 
-# Training function (with AMP for FP16)
+# Exponential Epsilon Decay Function
+def epsilon_by_episode_exponential(episode):
+    return EPS_END + (EPS_START - EPS_END) * np.exp(-episode / EPS_DECAY)
+
+# Training Function
 def train(n_episodes):
 
     start_time = time.time()  # Start timing
     scores = []
-    scores_window = deque(maxlen=100)
-    #scaler = torch.amp.GradScaler("cuda")  # Helps with gradient stability
+    scores_window = deque(maxlen=10)
+    original_score_window = deque(maxlen=10)
+    best_score = 0
+    original_best_score = 0
+    ##episode_rewards = []
 
     for i_episode in range(1, n_episodes + 1):
-        #state = stack_frames(None, env.reset()[0], True) # Original
-        state = stack_frames(None, env.reset()[0], True).astype(np.float16) # FP16 - HALF PRECISION
+
+        if torch.cuda.is_available():
+            ##state = stack_frames(None, env.reset()[0], True).to(torch.float32) # FULL PRECISION (FP32)
+            state = stack_frames(None, env.reset()[0], True).to(torch.float16)  # HALF PRECISION (FP16)
+        else:
+            ##state = stack_frames(None, env.reset()[0], True) # FULL PRECISION (FP32)
+            state = stack_frames(None, env.reset()[0], True).astype(np.float16) # HALF PRECISION (FP16)
+
         score = 0
-        eps = epsilon_by_episode(i_episode)
+        original_score = 0
+        eps = epsilon_by_episode_exponential(i_episode)
         
         while True:
 
-            #action = agent.act(state, eps)
-            
-            # Use FP16 for model training
-            with torch.amp.autocast("cuda"):  # Enable FP16
+            with torch.amp.autocast("cuda"):  # FP16 - HALF PRECISION
                 action = agent.act(state, eps)
             
-            # No FP16 needed for env interaction
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            #next_state = stack_frames(state, next_state, False)
-            next_state = stack_frames(state, next_state, False).astype(np.float16) # FP16 - HALF PRECISION
 
-            reward = np.float16(reward)  # FP16 - HALF PRECISION
+            if torch.cuda.is_available():
+                ##next_state = stack_frames(state, next_state, False).to(torch.float32) # FULL PRECISION (FP32)
+                next_state = stack_frames(state, next_state, False).to(torch.float16) # HALF PRECISION (FP16)
+            else:
+                ##next_state = stack_frames(state, next_state, False) # FULL PRECISION (FP32)
+                next_state = stack_frames(state, next_state, False).astype(np.float16) # HALF PRECISION (FP16)
+
+            #reward = np.float16(reward)  # FP16 - HALF PRECISION
             agent.step(state, action, reward, next_state, done)  
 
             state = next_state
             score += reward
+    
+            original_score = info['original_score']
 
             if done:
                 break
 
         scores_window.append(score)
-        scores.append(score)
+        original_score_window.append(original_score)
 
-        # Print progress instead of plotting
+        scores.append(score)
+        ##episode_rewards.append(score)
+
+        # Track High Scores
+        if score > best_score:
+            best_score = score
+            original_best_score = original_score
+            print(f"New Highscore: {best_score} (Game Score: {original_best_score}) on episode {i_episode}")
+
+        # Print Progress
         if i_episode % 10 == 0:
-            print(f"Episode {i_episode} - Avg Score: {np.mean(scores_window):.2f} - Epsilon: {eps:.2f}")
+            print(f"Episode {i_episode:5d} | Avg Score: {np.mean(scores_window):.2f} | Avg Real Score: {np.mean(original_score_window):.2f} | Epsilon: {eps:.2f}")
+
+            """
+            # Plot Progress
+            if i_episode % n_episodes == 0:
+                plot_scores(episode_rewards[-1000:], i_episode)
+            """
 
     end_time = time.time()  # End timing
     elapsed_time = end_time - start_time
     print(f"\nTotal Training Time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    print(f"Highest Score Achieved: {best_score}")
+    print(f"Highest Original Score Achieved: {original_best_score}")
 
     return scores
 
 # Run Training
-train(n_episodes=1000)
+train(n_episodes=500)
+##save_agent(agent, 'trained_models/SpaceInvaders_PER_10k.pth')
 
 env.close()

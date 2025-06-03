@@ -6,6 +6,7 @@ import numpy as np
 from collections import deque
 import time
 import sys
+import gc
 
 sys.path.append('./')
 
@@ -13,13 +14,15 @@ sys.path.append('./')
 from agents.ddqn_agent_Async_v2 import DDQNAgent
 
 # Import Models
-from models import DDQNCnn
+from models.ddqn_cnn_async import DDQNCnn
 
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame
 
 # Import Custom Reward Modifier Wrapper
-from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper
+#from rewards.SpaceInvaders.SpaceInvaders_rewards import RewardModifierWrapper
+
+torch.cuda.empty_cache()
 
 # Set up Device
 print(torch.cuda.is_available())
@@ -75,7 +78,7 @@ def stack_frames_batch(prev_frames, states, is_new_batch):
 INPUT_SHAPE = (4, 84, 84)
 GAMMA = 0.99
 BUFFER_SIZE = 50000
-BATCH_SIZE = 128
+BATCH_SIZE = 4
 LR = 0.005
 TAU = 0.005 # 0.001 #0.1
 UPDATE_EVERY = 50
@@ -94,6 +97,7 @@ def train(n_episodes):
     episode_rewards = [[] for _ in range(NUM_ENVS)]
     episode_count = 0
     max_episodes = n_episodes
+    all_scores = []
 
     # Initialize frame buffers and initial state
     raw_state = envs.reset()[0]  # Shape: (NUM_ENVS, H, W, C)
@@ -125,8 +129,17 @@ def train(n_episodes):
             if dones[i]:
                 episode_count += 1
                 total_reward = sum(episode_rewards[i])
+                all_scores.append(total_reward)
                 print(f"Episode {episode_count} - Score: {total_reward:.2f} - Epsilon: {eps:.2f}")
                 episode_rewards[i] = []
+
+                # Print average score every 10 episodes
+                if episode_count % 10 == 0:
+                    avg_score = np.mean(torch.tensor(all_scores[-10:]).cpu().numpy())
+                    print(f"Episode {episode_count} - Score Average (last 10 episodes): {avg_score:.2f}")
+                    gc.collect()
+                    torch.cuda.empty_cache()
+
 
         state = next_states  # Move to next state
 
@@ -139,11 +152,11 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()  # Optional but helpful on Windows
 
     # Initialize Environment Vector
-    NUM_ENVS = 2
+    NUM_ENVS = 3
     def make_env():
         def thunk():
             env = gym.make('ALE/SpaceInvaders-v5', frameskip=4)
-            env = RewardModifierWrapper(env)
+            #env = RewardModifierWrapper(env)
             return env
         return thunk
 

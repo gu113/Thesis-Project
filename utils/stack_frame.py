@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import cv2
 
 def preprocess_frame(screen, exclude, output):
@@ -11,7 +12,8 @@ def preprocess_frame(screen, exclude, output):
             output (int): Size of output image
         """
     # TConver image to gray scale
-    screen = cv2.cvtColor(screen, cv2.COLOR_RGB2GRAY)
+    if len(screen.shape) == 3 and screen.shape[2] == 3:
+        screen = cv2.cvtColor(screen, cv2.COLOR_RGB2GRAY)
     
     #Crop screen[Up: Down, Left: right] 
     screen = screen[exclude[0]:exclude[2], exclude[3]:exclude[1]]
@@ -33,7 +35,10 @@ def stack_frame(stacked_frames, frame, is_new):
             is_new: Is the state First
         """
     if is_new:
-        stacked_frames = np.stack(arrays=[frame, frame, frame, frame])
+        if isinstance(frame, torch.Tensor):
+            stacked_frames = torch.stack([frame, frame, frame, frame])
+        else:
+            stacked_frames = np.stack(arrays=[frame, frame, frame, frame])
         stacked_frames = stacked_frames
     else:
         stacked_frames[0] = stacked_frames[1]
