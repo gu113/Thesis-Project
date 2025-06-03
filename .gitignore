@@ -1,0 +1,3 @@
+# Ignore all trained model files
+trained_models/
+*.pth
