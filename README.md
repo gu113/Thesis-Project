@@ -22,8 +22,11 @@ Required Python Packages:
 ```
 pip install torch torchvision torchaudio
 pip install gymnasium[atari]
+pip install gymnasium[other]
+pip install gym
 pip install ale-py
-pip install numpy
+pip install numpy==1.26.4
+pip install pygame
 ```
 
 ### Execution Steps
