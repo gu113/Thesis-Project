@@ -49,6 +49,11 @@ class DQNAgent():
 
     
     def step(self, state, action, reward, next_state, done):
+
+        # Transfer tensors to device
+        state = state.to(self.device)
+        next_state = next_state.to(self.device)
+
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
         
@@ -64,7 +69,9 @@ class DQNAgent():
     def act(self, state, eps=0.):
         """Returns actions for given state as per current policy."""
         
-        state = torch.from_numpy(state).unsqueeze(0).to(self.device)
+        #state = torch.from_numpy(state).unsqueeze(0).to(self.device) # For Numpy input
+        state = state.unsqueeze(0).to(self.device)  # For Tensor input
+
         self.policy_net.eval()
         with torch.no_grad():
             action_values = self.policy_net(state)
@@ -80,14 +87,13 @@ class DQNAgent():
         states, actions, rewards, next_states, dones = experiences
 
         # Get expected Q values from policy model
-        Q_expected_current = self.policy_net(states)
-        Q_expected = Q_expected_current.gather(1, actions.unsqueeze(1)).squeeze(1)
+        Q_expected = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
-        # Get max predicted Q values (for next states) from target model
+        # Get max predicted Q values (for next states) from target model (Standard DQN)
         Q_targets_next = self.target_net(next_states).detach().max(1)[0]
         
         # Compute Q targets for current states 
-        Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+        Q_targets = rewards + (self.gamma * Q_targets_next * (~dones))
         
         # Compute loss
         loss = F.mse_loss(Q_expected, Q_targets)

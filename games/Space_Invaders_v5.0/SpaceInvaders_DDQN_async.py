@@ -17,9 +17,11 @@ from models import DDQNCnn
 
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame
+from utils.save_load import save_agent, load_agent
 
 # Import Custom Reward Modifier Wrapper
-from wrappers.SpaceInvaders.rewards import RewardModifierWrapper
+from wrappers.SpaceInvaders.rewards import ComplexRewardModifierWrapper
+from wrappers.SpaceInvaders.noop_reset import NoopResetEnv
 
 NUM_ENVS = 4
 
@@ -27,7 +29,8 @@ NUM_ENVS = 4
 def make_env():
     def thunk():
         env = gym.make('ALE/SpaceInvaders-v5', frameskip=4)
-        env = RewardModifierWrapper(env)
+        env = ComplexRewardModifierWrapper(env)
+        env = NoopResetEnv(env, noop_max=30)
         return env
     return thunk
 
@@ -51,35 +54,58 @@ def stack_frames_batch(prev_frames, states, is_new_batch):
         stacked.append(frames)
     return np.stack(stacked)
 
+
+"""
+def plot_scores(scores, episode_num):
+    plt.figure(figsize=(10, 6))
+    plt.plot(scores)
+    plt.title(f'Training Progress - Episodes {episode_num-len(scores)+1} to {episode_num}')
+    plt.xlabel('Episode')
+    plt.ylabel('Score')
+    plt.grid(True)
+    plt.savefig(f'training_progress_{episode_num}.png')
+    plt.close()
+"""
+
+
 # Hyperparameters
 INPUT_SHAPE = (4, 84, 84)
 GAMMA = 0.99
-BUFFER_SIZE = 50000
-BATCH_SIZE = 128
-LR = 0.005
-TAU = 0.005
-UPDATE_EVERY = 50
+BUFFER_SIZE = 100000
+BATCH_SIZE = 64
+LR = 0.0001
+TAU = 0.001
+UPDATE_EVERY = 4
 EPS_START = 0.99
 EPS_END = 0.01
 EPS_DECAY = 1000
 
-# Simplified epsilon function
-def epsilon_by_episode(episode):
+# Linear Epsilon Decay Function
+def epsilon_by_episode_linear(episode):
     return max(EPS_END, EPS_START - (episode / EPS_DECAY))
+
+# Exponential Epsilon Decay Function
+def epsilon_by_episode_exponential(episode):
+    return EPS_END + (EPS_START - EPS_END) * np.exp(-episode / EPS_DECAY)
 
 # Training function (with AMP for FP16)
 def train(n_episodes, envs, agent):
     start_time = time.time()
     scores = []
     scores_window = deque(maxlen=100)
+    original_score_window = deque(maxlen=10)
+    best_score = 0
+    original_best_score = 0
 
     stacked_frames = [None for _ in range(NUM_ENVS)]
     obs, _ = envs.reset()
     obs = stack_frames_batch(stacked_frames, obs, [True] * NUM_ENVS).astype(np.float16)
     episode_rewards = np.zeros(NUM_ENVS, dtype=np.float32)
 
-    for episode in range(1, n_episodes + 1):
-        eps = epsilon_by_episode(episode)
+    for i_episode in range(1, n_episodes + 1):
+        score = 0
+        original_score = 0
+        eps = epsilon_by_episode_exponential(i_episode)
 
         while True:
             with torch.amp.autocast("cuda"):
@@ -106,12 +132,20 @@ def train(n_episodes, envs, agent):
                 obs = stack_frames_batch(stacked_frames, obs, [True] * NUM_ENVS).astype(np.float16)
                 break
 
-        if episode % 10 == 0:
-            print(f"Episode {episode} - Avg Score: {np.mean(scores_window):.2f} - Epsilon: {eps:.2f}")
+        if i_episode % 10 == 0:
+            print(f"Episode {i_episode:5d} | Avg Score: {np.mean(scores_window):.2f} | Avg Real Score: {np.mean(original_score_window):.2f} | Epsilon: {eps:.2f}")
+            
+            """
+            # Plot Progress
+            if i_episode % n_episodes == 0:
+                plot_scores(episode_rewards[-1000:], i_episode)
+            """
 
-    end_time = time.time()
+    end_time = time.time() # End timing
     elapsed_time = end_time - start_time
     print(f"\nTotal Training Time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    print(f"Highest Score Achieved: {best_score}")
+    print(f"Highest Original Score Achieved: {original_best_score}")
 
     return scores
 

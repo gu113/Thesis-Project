@@ -1,9 +1,10 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.nn.utils
 import torch.optim as optim
 import random
-from utils.replay_buffer import ReplayBuffer, OldPERBuffer, AsyncReplayBuffer, AsyncRamReplayBuffer, PERBuffer, RewardShapingPERBuffer
+from utils.replay_buffer import ReplayBuffer, OldPERBuffer, AsyncReplayBuffer, AsyncRamReplayBuffer, PERBuffer, ComplexPERBuffer
 
 class DDQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
@@ -38,14 +39,20 @@ class DDQNAgent():
 
         
         # Q-Network
-        self.policy_net = self.DQN(input_shape, action_size).to(self.device)
-        self.target_net = self.DQN(input_shape, action_size).to(self.device)
+        self.policy_net = self.DQN(input_shape, action_size).to(self.device).half()
+        self.target_net = self.DQN(input_shape, action_size).to(self.device).half()
+
+        # Optimizer with FP16 support
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
         
         # Replay memory
         self.memory = ReplayBuffer(self.buffer_size, self.batch_size, self.seed, self.device)
         
+        # Initialize step counter and target network
         self.t_step = 0
+        self.target_update = 5000
+        self.t_step_count = 0
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
     
     def step(self, state, action, reward, next_state, done):
@@ -55,43 +62,73 @@ class DDQNAgent():
         # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % self.update_every
 
-        if self.t_step == 0:
-            # If enough samples are available in memory, get random subset and learn
-            if len(self.memory) > self.replay_after:
-                experiences = self.memory.sample()
-                self.learn(experiences)
-                
+        # Increment step count
+        self.t_step_count += 1
+
+        # If enough samples are available in memory, get random subset and learn
+        if self.t_step == 0 and len(self.memory) > self.replay_after:
+            experiences = self.memory.sample()
+            self.learn(experiences)
+
+        # Hard update target network every target_update steps
+        if self.t_step_count % self.target_update == 0:
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+    
+
     def act(self, state, eps=0.):
         """Returns actions for given state as per current policy."""
         
         if isinstance(state, np.ndarray):
-            state = torch.from_numpy(state).unsqueeze(0).to(self.device)
+            state = torch.from_numpy(state).unsqueeze(0).to(self.device, dtype=torch.float16)
         else:
-            state = state.unsqueeze(0).to(self.device)
+            state = state.unsqueeze(0).to(self.device, dtype=torch.float16)
 
+        # Add batch dimension if needed
+        if len(state.shape) == 3:
+            state = state.unsqueeze(0)
+        
+        # Ensure state is in the correct format
         self.policy_net.eval()
         with torch.no_grad():
-            action_values = self.policy_net(state)
+            with torch.amp.autocast("cuda"):
+                action_values = self.policy_net(state)
+        
         self.policy_net.train()
         
         # Epsilon-greedy action selection
         if random.random() > eps:
-            return np.argmax(action_values.cpu().data.numpy())
+            ###return np.argmax(action_values.cpu().data.numpy()) # Worked with this cpu version
+            ##return torch.argmax(action_values).item()
+            return int(torch.argmax(action_values).item())
         else:
-            return random.choice(np.arange(self.action_size))
+            ###return random.choice(np.arange(self.action_size)) # Worked with this cpu version
+            ##return torch.tensor(random.choice(np.arange(self.action_size)), device=action_values.device)
+            ###return random.choice(np.arange(self.action_size))
+            return random.randint(0, self.action_size - 1)
+
         
     def learn(self, experiences):
         states, actions, rewards, next_states, dones = experiences
 
-        # Get expected Q values from policy model
-        Q_expected_current = self.policy_net(states)
-        Q_expected = Q_expected_current.gather(1, actions.unsqueeze(1)).squeeze(1)
+        states = states.half().to(self.device)
+        actions = actions.to(self.device)
+        rewards = rewards.half().to(self.device)
+        next_states = next_states.half().to(self.device)
+        dones = dones.to(self.device)
 
-        # Get max predicted Q values (for next states) from target model
-        Q_targets_next = self.target_net(next_states).detach().max(1)[0]
-        
-        # Compute Q targets for current states 
-        Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+        with torch.amp.autocast("cuda"):
+            # Get expected Q values from policy model
+            Q_expected_current = self.policy_net(states)
+            Q_expected = Q_expected_current.gather(1, actions.unsqueeze(1)).squeeze(1)
+
+        with torch.no_grad():
+            with torch.amp.autocast("cuda"):
+                # Get max predicted Q values (for next states) from target model
+                next_actions = self.policy_net(next_states).argmax(1) ## maybe .detach() is needed here
+                Q_targets_next = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1).detach() ## maybe .detach() is not needed here
+            
+                # Compute Q targets for current states 
+                Q_targets = rewards + (self.gamma * Q_targets_next * (~dones).half())
         
         # Compute loss
         loss = F.mse_loss(Q_expected, Q_targets)
@@ -99,6 +136,9 @@ class DDQNAgent():
         # Minimize the loss
         self.optimizer.zero_grad()
         loss.backward()
+
+        # Clip gradients to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
         self.optimizer.step()
 
         self.soft_update(self.policy_net, self.target_net, self.tau)
@@ -466,6 +506,13 @@ class AsyncDDQNAgent():
 
     
     def step(self, state, action, reward, next_state, done):
+        
+        # Ensure state and next_state are tensors
+        if isinstance(state, np.ndarray):
+            state = torch.from_numpy(state).float()
+        if isinstance(next_state, np.ndarray):
+            next_state = torch.from_numpy(next_state).float()
+        
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
         
@@ -479,28 +526,64 @@ class AsyncDDQNAgent():
                 self.learn(experiences)
                 
     def act(self, states, eps=0.0):
-        states = torch.tensor(states, dtype=torch.float32, device=self.device) # Uses fp16, OR torch.float32 for normal version
+
+        """
+        if isinstance(states, np.ndarray):
+            states = torch.from_numpy(states).float().to(self.device)
+        else:
+            states = states.unsqueeze(0).to(self.device)
+        """
+
+        if isinstance(states, np.ndarray):
+            print("Converting states from np.ndarray to torch.Tensor")
+            states = torch.from_numpy(states).to(self.device, dtype=torch.float32, non_blocking=True)
+
+        if len(states.shape) == 3:  # If single state, add batch dimension
+            print("Adding batch dimension to states")
+            states = states.unsqueeze(0).to(self.device, dtype=torch.float32, non_blocking=True)
+        
+        #states = states.clone().detach().float().to(self.device)
+
+        self.policy_net.eval()
         with torch.no_grad():
-            q_values = self.policy_net(states)
-        if np.random.rand() > eps:
-            return torch.argmax(q_values, dim=1).cpu().numpy()
+            action_values = self.policy_net(states)
+        self.policy_net.train()
+
+        # Epsilon-greedy action selection
+        if random.random() > eps:
+            return torch.argmax(action_values, dim=1).cpu().numpy()
         else:
             return np.random.randint(self.action_size, size=(states.shape[0],))
 
     def learn(self, experiences):
         states, actions, rewards, next_states, dones = experiences
+
+        states = states.to(self.device).float()
+        actions = actions.to(self.device).long()
+        rewards = rewards.to(self.device).float()
+        next_states = next_states.to(self.device).float()
+        dones = dones.to(self.device).float()
         
         # Get Q-values for current states
         Q_expected_current = self.policy_net(states)
+
+        # Gather Q-values based on actions
+        Q_expected = Q_expected_current.gather(1, actions.unsqueeze(1)).squeeze(1)
         
+        with torch.no_grad():
+            # Get actions from policy network
+            next_actions = self.policy_net(next_states).argmax(1)
+            # Get Q-values from target network
+            Q_targets_next = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+            # Compute target Q-values
+            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+
+        """
         # Get Q-values for next states (target network)
         Q_expected_next = self.target_net(next_states)
         
         # Ensure Q_targets_next has the shape [batch_size] (max Q-value per sample)
         Q_targets_next = Q_expected_next.max(1)[0]  # This will have shape [batch_size]
-        
-        # Gather Q-values based on actions
-        Q_expected = Q_expected_current.gather(1, actions.view(-1, 1)).squeeze(1)
         
         # Ensure rewards and dones are 1D tensors with shape [batch_size]
         rewards = rewards.view(-1)
@@ -508,15 +591,21 @@ class AsyncDDQNAgent():
         
         # Compute target Q-values (Double DQN target)
         Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))  # Shape [batch_size]
-        
-        # Compute loss and perform optimization step
+        """
+        # Compute loss
         loss = F.mse_loss(Q_expected, Q_targets)
+
+        # Minimize the loss
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
+
+        self.soft_update(self.policy_net, self.target_net, self.tau)
 
     
     # θ'=θ×τ+θ'×(1−τ)
+    @torch.no_grad()
     def soft_update(self, policy_model, target_model, tau):
         for target_param, policy_param in zip(target_model.parameters(), policy_model.parameters()):
             target_param.data.copy_(tau*policy_param.data + (1.0-tau)*target_param.data)
@@ -652,7 +741,6 @@ class DDQNAgentPER():
         self.memory = PERBuffer(buffer_size, batch_size, seed, device)
         self.frame_idx = 0
 
-        # PER beta annealing parameters
         self.per_beta_start = 0.4
         self.per_beta_frames = 100000
 
@@ -663,7 +751,6 @@ class DDQNAgentPER():
 
     def step(self, state, action, reward, next_state, done):
         max_priority = self.memory.tree.max() if self.memory.tree.n_entries > 0 else 1.0
-        # Add experience with max priority, note 'error' param for add() here is max_priority for new samples
         self.memory.add(max_priority, state, action, reward, next_state, done)
 
         self.t_step = (self.t_step + 1) % self.update_every
@@ -671,9 +758,8 @@ class DDQNAgentPER():
             if self.memory.tree.n_entries > self.replay_after:
                 beta = self._beta_by_frame(self.frame_idx)
                 experiences, idxs, is_weights = self.memory.sample()
-                # is_weights already accounts for beta internally in your buffer
                 self.learn(experiences, idxs, is_weights)
-                self.frame_idx += 1
+        self.frame_idx += 1
 
     def act(self, state, eps=0.):
         if isinstance(state, np.ndarray):
@@ -695,31 +781,37 @@ class DDQNAgentPER():
         states, actions, rewards, next_states, dones = zip(*experiences)
 
         states = torch.stack(states).to(self.device).float()
-        actions = torch.tensor(actions).to(self.device)
+        actions = torch.tensor(actions, dtype=torch.long).to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         next_states = torch.stack(next_states).to(self.device).float()
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
-        ##is_weights = is_weights.clone().detach().float().to(self.device)
-        is_weights = is_weights.float()
+        is_weights = is_weights.detach().to(self.device).float()
 
         Q_expected_all = self.policy_net(states)
         Q_expected = Q_expected_all.gather(1, actions.unsqueeze(1)).squeeze(1)
 
-        Q_targets_next = self.target_net(next_states).detach().max(1)[0]
-
-        Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+        with torch.no_grad():
+            ###Q_targets_next = self.target_net(next_states).detach().max(1)[0]
+            ###Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+            next_actions = self.policy_net(next_states).max(1)[1].detach()  # detach??
+            Q_targets_next = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1).detach()
+            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
 
         td_errors = Q_expected - Q_targets
-
         loss = (is_weights * td_errors.pow(2)).mean()
 
+        # Optimize
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0) ## TESTING
         self.optimizer.step()
-
+    	
+        # Update target network
         self.soft_update(self.policy_net, self.target_net, self.tau)
 
-        new_priorities = td_errors.abs().detach().cpu().numpy() + 1e-6
+        with torch.no_grad():
+            ##new_priorities = td_errors.abs().detach().cpu().numpy() + 1e-6
+            new_priorities = td_errors.abs().cpu().numpy() + 1e-6 ## TESTING
         self.memory.update_priorities(idxs, new_priorities)
 
     @torch.no_grad()
@@ -729,8 +821,7 @@ class DDQNAgentPER():
 
 
 class ComplexDDQNAgentPER():
-    def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model, use_per=True):
-        """Enhanced DDQN Agent with Prioritized Experience Replay and reward focusing"""
+    def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model, complex_per=True):
         self.input_shape = input_shape
         self.action_size = action_size
         self.seed = random.seed(seed)
@@ -739,200 +830,118 @@ class ComplexDDQNAgentPER():
         self.batch_size = batch_size
         self.gamma = gamma
         self.lr = lr
+        self.tau = tau
         self.update_every = update_every
         self.replay_after = replay_after
         self.DQN = model
-        self.tau = tau
-        self.use_per = use_per
+        self.complex_per = complex_per
 
-        # Q-Networks
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
-        
-        # Enhanced optimizer with learning rate scheduling
-        self.optimizer = optim.Adam(
-            self.policy_net.parameters(), 
-            lr=self.lr,
-            betas=(0.9, 0.999),
-            eps=1e-8,
-            weight_decay=1e-5
-        )
-        
-        # More aggressive learning rate schedule for faster convergence
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 
-            mode='max',  # Reduce when performance plateaus
-            factor=0.8,
-            patience=5000,
-        )
-        
-        # Initialize target network
+
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-5)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.8, patience=5000)
+
         self.hard_update(self.target_net, self.policy_net)
-        
-        # Choose replay buffer type
-        if use_per:
-            self.memory = PERBuffer(
-                self.buffer_size, self.batch_size, self.seed, self.device,
-                alpha=0.6, beta=0.4, beta_increment=0.0001
-            )
+
+        if self.complex_per:
+            self.memory = ComplexPERBuffer(buffer_size, batch_size, seed, device, reward_threshold=300)
         else:
-            self.memory = RewardShapingPERBuffer(
-                self.buffer_size, self.batch_size, self.seed, self.device,
-                reward_threshold=300  # Focus on episodes with 300+ score
-            )
-        
-        # Counters
+            self.memory = PERBuffer(buffer_size, batch_size, seed, device, alpha=0.6, beta=0.4, beta_increment=0.0001)
+
         self.t_step = 0
         self.learn_step = 0
         self.current_episode_reward = 0
-        
-        # Performance tracking
+
         self.loss_history = []
         self.q_values_history = []
         self.td_errors_history = []
 
     def start_episode(self):
-        """Call this at the start of each episode"""
         self.current_episode_reward = 0
 
     def step(self, state, action, reward, next_state, done):
-        # Track episode reward
         self.current_episode_reward += reward
-        
-        # Save experience in replay memory
-        if self.use_per:
-            max_priority = self.memory.tree.max() if self.memory.tree.n_entries > 0 else 1.0
-            self.memory.add(max_priority, state, action, reward, next_state, done)
-        else:
+
+        if self.complex_per:
             episode_reward = self.current_episode_reward if done else 0
             self.memory.add(state, action, reward, next_state, done, episode_reward)
-        
-        # Learn every UPDATE_EVERY time steps
+        else:
+            max_priority = self.memory.tree.max() if self.memory.tree.n_entries > 0 else 1.0
+            self.memory.add(max_priority, state, action, reward, next_state, done)
+
         self.t_step = (self.t_step + 1) % self.update_every
 
-        if self.t_step == 0:
-            if len(self.memory) > self.replay_after:
-                if self.use_per:
-                    experiences = self.memory.sample()
-                    if experiences is not None:
-                        loss, td_errors = self.learn_per(experiences)
-                        self.loss_history.append(loss)
-                else:
-                    experiences = self.memory.sample()
-                    if experiences is not None:
-                        loss = self.learn(experiences)
-                        self.loss_history.append(loss)
-                
+        if self.t_step == 0 and len(self.memory) > self.replay_after:
+            experiences = self.memory.sample()
+            if experiences is not None:
+                loss, td_errors = self.learn_per(experiences)
+                self.loss_history.append(loss)
+
     def act(self, state, eps=0.):
-        """Enhanced action selection with better exploration"""
         if isinstance(state, np.ndarray):
             state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         else:
             state = state.float().unsqueeze(0).to(self.device)
-            
+
         self.policy_net.eval()
         with torch.no_grad():
             action_values = self.policy_net(state)
-            
         self.policy_net.train()
-        
-        # Store Q-values for monitoring
+
         max_q = action_values.cpu().numpy().max()
         self.q_values_history.append(max_q)
-        
-        # Enhanced epsilon-greedy with Boltzmann exploration for better actions
+
         if random.random() > eps:
             return np.argmax(action_values.cpu().data.numpy())
         else:
-            # Occasionally use Boltzmann exploration instead of random
-            if eps > 0.1 and random.random() < 0.3:  # 30% of exploration uses Boltzmann
-                temperature = eps * 2  # Higher temperature = more exploration
+            if eps > 0.1 and random.random() < 0.3:
+                temperature = eps * 2
                 probs = F.softmax(action_values / temperature, dim=1)
-                action = torch.multinomial(probs, 1).item()
-                return action
+                return torch.multinomial(probs, 1).item()
             else:
                 return random.choice(np.arange(self.action_size))
-        
+
     def learn_per(self, experiences):
-        """Learning with Prioritized Experience Replay"""
         states, actions, rewards, next_states, dones, indices, is_weights = experiences
 
-        # Double DQN
         with torch.no_grad():
             next_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
             Q_targets_next = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
 
         Q_expected = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        
-        # Calculate TD errors for priority updates
         td_errors = Q_targets - Q_expected
-        
-        # Weighted loss using importance sampling
+
         loss = (is_weights * F.smooth_l1_loss(Q_expected, Q_targets, reduction='none')).mean()
 
-        # Optimize
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
         self.optimizer.step()
-        
-        # Update priorities in replay buffer
+
         priorities = abs(td_errors.detach().cpu().numpy()) + 1e-6
         self.memory.update_priorities(indices, priorities)
-        
-        # Update target network
+
         self.soft_update(self.policy_net, self.target_net, self.tau)
-        
+
         self.learn_step += 1
         self.td_errors_history.extend(abs(td_errors.detach().cpu().numpy()))
-        
+
         return loss.item(), td_errors.detach().cpu().numpy()
-        
-    def learn(self, experiences):
-        """Standard learning for reward shaping buffer"""
-        states, actions, rewards, next_states, dones = experiences
 
-        # Double DQN
-        with torch.no_grad():
-            next_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
-            Q_targets_next = self.target_net(next_states).gather(1, next_actions).squeeze(1)
-            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
-
-        Q_expected = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        
-        # Huber loss
-        loss = F.smooth_l1_loss(Q_expected, Q_targets)
-
-        # Optimize
-        self.optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
-        self.optimizer.step()
-        
-        # Update target network
-        self.soft_update(self.policy_net, self.target_net, self.tau)
-        
-        self.learn_step += 1
-        
-        return loss.item()
-    
     def update_learning_rate(self, avg_score):
-        """Update learning rate based on performance"""
         self.scheduler.step(avg_score)
-    
+
     def soft_update(self, policy_model, target_model, tau):
-        """Soft update model parameters"""
         for target_param, policy_param in zip(target_model.parameters(), policy_model.parameters()):
             target_param.data.copy_(tau * policy_param.data + (1.0 - tau) * target_param.data)
-    
+
     def hard_update(self, target_model, policy_model):
-        """Hard update: copy weights from policy to target network"""
         target_model.load_state_dict(policy_model.state_dict())
-    
+
     def get_stats(self):
-        """Return detailed training statistics"""
-        stats = {
+        return {
             'avg_loss': np.mean(self.loss_history[-100:]) if self.loss_history else 0,
             'avg_q_value': np.mean(self.q_values_history[-100:]) if self.q_values_history else 0,
             'avg_td_error': np.mean(self.td_errors_history[-100:]) if self.td_errors_history else 0,
@@ -940,4 +949,3 @@ class ComplexDDQNAgentPER():
             'learning_rate': self.optimizer.param_groups[0]['lr'],
             'learn_steps': self.learn_step
         }
-        return stats
