@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-
+# Double DQN CNN Model for RAM version of Atari games
 class RamDDQN(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(RamDDQN, self).__init__()
@@ -39,6 +39,7 @@ class RamDDQN(nn.Module):
         return value + advantage - advantage.mean(dim=1, keepdim=True)
 
 
+# Async Double DQN CNN Model for RAM version of Atari games
 class AsyncRamDDQN(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(AsyncRamDDQN, self).__init__()

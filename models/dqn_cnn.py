@@ -3,12 +3,14 @@ import torch.nn as nn
 import torch.autograd as autograd 
 import torch.nn.functional as F
 
+# DQN CNN Model
 class DQNCnn(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(DQNCnn, self).__init__()
         self.input_shape = input_shape
         self.num_actions = num_actions
         
+        # Define the CNN layers
         self.features = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -18,6 +20,7 @@ class DQNCnn(nn.Module):
             nn.ReLU()
         )
         
+        # Define the fully connected layers
         self.fc = nn.Sequential(
             nn.Linear(self.feature_size(), 512),
             nn.ReLU(),

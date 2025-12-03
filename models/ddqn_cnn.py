@@ -5,12 +5,14 @@ import torch.nn.functional as F
 import numpy as np
 
 
+# Double DQN CNN Model
 class DDQNCnn(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(DDQNCnn, self).__init__()
         self.input_shape = input_shape
         self.num_actions = num_actions
         
+        # Define the CNN layers
         self.features = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -20,12 +22,14 @@ class DDQNCnn(nn.Module):
             nn.ReLU()
         )
         
+        # Define the advantage stream
         self.advantage = nn.Sequential(
             nn.Linear(self.feature_size(), 512),
             nn.ReLU(),
             nn.Linear(512, self.num_actions)
         )
 
+        # Define the value stream
         self.value = nn.Sequential(
             nn.Linear(self.feature_size(), 512),
             nn.ReLU(),
@@ -44,6 +48,7 @@ class DDQNCnn(nn.Module):
         return self.features(autograd.Variable(torch.zeros(1, *self.input_shape))).view(1, -1).size(1)
   
 
+# Double DQN CNN Model with a more Complex Architecture
 class ComplexDDQNCnn(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(ComplexDDQNCnn, self).__init__()
@@ -102,14 +107,12 @@ class ComplexDDQNCnn(nn.Module):
         self.apply(self._init_weights)
         
     def _get_feature_dim(self):
-        """Calculate the dimension of flattened features"""
         with torch.no_grad():
             sample_input = torch.zeros(1, *self.input_shape)
             sample_output = self.features(sample_input)
             return int(np.prod(sample_output.size()[1:]))
     
     def _init_weights(self, module):
-        """Initialize network weights"""
         if isinstance(module, nn.Conv2d):
             nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
             if module.bias is not None:
@@ -122,7 +125,6 @@ class ComplexDDQNCnn(nn.Module):
             nn.init.constant_(module.bias, 0)
     
     def forward(self, x):
-        # Ensure input is in the correct range [0, 1]
         if x.max() > 1.0:
             x = x / 255.0
             
@@ -141,13 +143,14 @@ class ComplexDDQNCnn(nn.Module):
         return q_values
 
 
+# Simpler Double DQN CNN Model for Testing Purposes
 class SimpleDDQNCnn(nn.Module):
-    """A simpler but more stable version for comparison"""
     def __init__(self, input_shape, num_actions):
         super(SimpleDDQNCnn, self).__init__()
         self.input_shape = input_shape
         self.num_actions = num_actions
         
+        # Define the CNN layers
         self.features = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -196,10 +199,8 @@ class SimpleDDQNCnn(nn.Module):
         return q_values
     
 
+# Dueling Double DQN CNN Model
 class DuelingDQNCnn(nn.Module):
-    """
-    A Dueling Deep Q-Learning network architecture.
-    """
     def __init__(self, input_shape, num_actions):
         super(DuelingDQNCnn, self).__init__()
         self.input_shape = input_shape
@@ -230,17 +231,12 @@ class DuelingDQNCnn(nn.Module):
         )
         
     def _get_feature_size(self):
-        """
-        Calculates the size of the flattened feature vector.
-        """
         with torch.no_grad():
             dummy_input = torch.zeros(1, *self.input_shape)
             return self.features(dummy_input).view(1, -1).size(1)
         
     def forward(self, x):
-        # Pass input through shared feature layers
         features = self.features(x)
-        # Flatten the features
         features = features.view(features.size(0), -1)
         
         # Get advantage and value from their respective streams
@@ -251,11 +247,8 @@ class DuelingDQNCnn(nn.Module):
         return q_values
     
 
+# More Complex Dueling Double DQN CNN Model Architecture with Batch Normalization, Dropout, and Kaiming initialization
 class ComplexDuelingDQNCnn(nn.Module):
-    """
-    A more complex Dueling Deep Q-Learning network architecture
-    with Batch Normalization, Dropout, and Kaiming initialization.
-    """
     def __init__(self, input_shape, num_actions):
         super(ComplexDuelingDQNCnn, self).__init__()
         self.input_shape = input_shape
@@ -309,14 +302,12 @@ class ComplexDuelingDQNCnn(nn.Module):
         self.apply(self._init_weights)
         
     def _get_feature_dim(self):
-        """Calculate the dimension of flattened features"""
         with torch.no_grad():
             sample_input = torch.zeros(1, *self.input_shape)
             sample_output = self.features(sample_input)
             return int(np.prod(sample_output.size()[1:]))
     
     def _init_weights(self, module):
-        """Initialize network weights"""
         if isinstance(module, nn.Conv2d):
             nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
             if module.bias is not None:
@@ -329,7 +320,6 @@ class ComplexDuelingDQNCnn(nn.Module):
             nn.init.constant_(module.bias, 0)
     
     def forward(self, x):
-        # Normalize input if needed
         if x.max() > 1.0:
             x = x / 255.0
             
@@ -347,12 +337,14 @@ class ComplexDuelingDQNCnn(nn.Module):
         return q_values
     
 
+# Asynchronous Double DQN CNN Model
 class AsyncDDQNCnn(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(AsyncDDQNCnn, self).__init__()
         self.input_shape = input_shape
         self.num_actions = num_actions
         
+        # Define the shared convolutional feature extractor
         self.features = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -362,12 +354,14 @@ class AsyncDDQNCnn(nn.Module):
             nn.ReLU()
         )
         
+        # Advantage stream
         self.advantage = nn.Sequential(
             nn.Linear(self.feature_size(), 512),
             nn.ReLU(),
             nn.Linear(512, self.num_actions)
         )
 
+        # Value stream
         self.value = nn.Sequential(
             nn.Linear(self.feature_size(), 512),
             nn.ReLU(),
@@ -375,7 +369,7 @@ class AsyncDDQNCnn(nn.Module):
         )
         
     def forward(self, x):
-        # Check if x has an extra dimension (5D) and reshape it to 4D
+        # Check if x has an extra dimension (5D) and reshape it to 4D (to avoid errors)
         if len(x.shape) == 5:  # if input has shape [batch_size, 2, 4, height, width]
             x = x.view(-1, x.size(2), x.size(3), x.size(4))  # Reshape to [batch_size * 2, height, width]
 
@@ -389,7 +383,7 @@ class AsyncDDQNCnn(nn.Module):
         advantage = self.advantage(x)
         value = self.value(x)
         
-        # Return the combined value and advantage (Double DQN)
+        # Return the combined value and advantage
         return value + advantage - advantage.mean()
 
     def feature_size(self):

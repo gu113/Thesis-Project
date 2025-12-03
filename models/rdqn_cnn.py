@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+# Noisy Linear Layer (Based on the Original Rainbow DQN Paper)
 class NoisyLinear(nn.Module):
     def __init__(self, in_features, out_features, sigma_init=0.5):
         super(NoisyLinear, self).__init__()
@@ -49,8 +50,8 @@ class NoisyLinear(nn.Module):
         return F.linear(input, weight, bias)
 
 
+# Dueling Q-Network with Categorical output (Based on the OriginalRainbow DQN Paper) 
 class CategoricalQNetwork(nn.Module):
-    # Dueling Q-Network with Categorical output (C51)
     def __init__(self, input_shape, n_actions, num_atoms, V_min, V_max):
         super(CategoricalQNetwork, self).__init__()
         self.input_shape = input_shape
@@ -58,10 +59,9 @@ class CategoricalQNetwork(nn.Module):
         self.num_atoms = num_atoms
         self.V_min = V_min
         self.V_max = V_max
-        # Supports should be on the same device as the network when created
-        # No need to move it to device in get_q_values if it's already here.
         self.register_buffer('supports', torch.linspace(V_min, V_max, num_atoms)) 
 
+        # Convolutional layers
         self.conv = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -80,15 +80,10 @@ class CategoricalQNetwork(nn.Module):
         self.val_atom = NoisyLinear(512, num_atoms)
 
     def _get_conv_out(self, shape):
-        # Create a dummy tensor of float32 for shape inference, as inputs are now float32
         o = self.conv(torch.zeros(1, *shape, dtype=torch.float32)) 
         return int(torch.prod(torch.tensor(o.size())))
 
     def forward(self, x):
-        # x is assumed to be float32 and normalized (0-1) from the main loop now
-        # No need for x = x.float() here if inputs are already float32.
-        # If using autocast, inputs will be automatically handled.
-        
         conv_out = self.conv(x).view(x.size(0), -1)
 
         val_out = F.relu(self.fc_val(conv_out))
@@ -99,7 +94,7 @@ class CategoricalQNetwork(nn.Module):
         adv_atom = adv_out.view(-1, self.n_actions, self.num_atoms)
         
         q_atoms = val_atom.unsqueeze(1) + (adv_atom - adv_atom.mean(dim=1, keepdim=True))
-        q_probs = F.softmax(q_atoms, dim=-1).clamp(min=1e-5) # Clamp for stability
+        q_probs = F.softmax(q_atoms, dim=-1).clamp(min=1e-5)
         
         return q_probs
 
@@ -109,6 +104,4 @@ class CategoricalQNetwork(nn.Module):
                 module.reset_noise()
 
     def get_q_values(self, q_probs):
-        # Calculate expected Q-values from distributions for action selection
-        # self.supports is now a buffer, so it's always on the correct device.
-        return torch.sum(q_probs * self.supports, dim=-1)
+        return torch.sum(q_probs * self.supports, dim=-1) # Calculate expected Q-values from distributions for action selection
