@@ -11,7 +11,7 @@ import sys
 sys.path.append('./')
 
 # Import Rainbow Agent
-from agents.rainbow3 import RainbowDQNAgent
+from agents.rdqn_agent import RainbowDQNAgent
 
 # Import Utils
 from utils.stack_frame import preprocess_frame, stack_frame

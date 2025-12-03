@@ -9,10 +9,23 @@ from torch.distributions import Categorical
 from utils.replay_buffer import SACReplayBuffer
 
 class SACAgent:
-    """
-    Soft Actor-Critic (SAC) Agent for discrete action spaces.
-    """
     def __init__(self, input_shape, action_size, device, gamma, lr_actor, lr_critic, alpha, tau, buffer_size, batch_size, actor_m, critic_m):
+        """Initialize a SAC Agent
+        Params
+        ======
+            input_shape (tuple): Dimension of each state
+            action_size (int): Dimension of each action
+            device (string): Use Gpu or CPU
+            gamma (float): discount factor
+            lr_actor (float): Learning rate for the actor network
+            lr_critic (float): Learning rate for the critic networks
+            alpha (float): Initial temperature parameter
+            tau (float): Soft update parameter
+            buffer_size (int): Size of the replay buffer
+            batch_size (int): Mini-batch size for updates
+            actor_m (Model): Pytorch Actor Model
+            critic_m (Model): Pytorch Critic Model
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         self.device = device
@@ -43,14 +56,13 @@ class SACAgent:
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=lr_actor)
     
     def act(self, state, evaluate=False):
-        """
-        Returns an action to take in the environment.
-        """
+
         state_tensor = torch.from_numpy(state).unsqueeze(0).float().to(self.device)
         with torch.no_grad():
             logits = self.policy_net(state_tensor)
             dist = Categorical(logits=logits)
             
+            # Select action
             if evaluate:
                 action = torch.argmax(logits, dim=1).item()
             else:
@@ -59,9 +71,8 @@ class SACAgent:
         return action
 
     def step(self, state, action, reward, next_state, done):
-        """
-        Performs a single update step on the networks.
-        """
+        
+        # Save experience in replay buffer
         self.buffer.add(state, action, reward, next_state, done)
         
         if len(self.buffer) < self.batch_size:

@@ -8,8 +8,7 @@ from utils.replay_buffer import ReplayBuffer, OldPERBuffer, AsyncReplayBuffer, A
 
 class DDQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
-        """Initialize an Agent object.
-        
+        """Initialize a DDQN Agent
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -37,7 +36,6 @@ class DDQNAgent():
         self.DQN = model
         self.tau = tau
 
-        
         # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device).half()
         self.target_net = self.DQN(input_shape, action_size).to(self.device).half()
@@ -76,7 +74,6 @@ class DDQNAgent():
     
 
     def act(self, state, eps=0.):
-        """Returns actions for given state as per current policy."""
         
         if isinstance(state, np.ndarray):
             state = torch.from_numpy(state).unsqueeze(0).to(self.device, dtype=torch.float16)
@@ -154,8 +151,7 @@ class DDQNAgent():
 
 class OldAsyncDDQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
-        """Initialize an Agent object.
-        
+        """Initialize an Async DDQN Agent (Old Version)
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -264,8 +260,7 @@ class OldAsyncDDQNAgent():
 
 class OldDDQNAgentPER():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model, alpha):
-        """Initialize an Agent object.
-        
+        """Initialize a DDQN Agent with PER (Old Version)
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -376,7 +371,6 @@ class OldDDQNAgentPER():
             self.learn_step += 1
                 
     def act(self, state, eps=0.):
-        """Returns actions for given state as per current policy."""
         
         #state = torch.from_numpy(state).unsqueeze(0).to(self.device)
         state = torch.from_numpy(state).unsqueeze(0).to(self.device).float()#.half() # FP16 - HALF PRECISION
@@ -464,8 +458,7 @@ class OldDDQNAgentPER():
 
 class AsyncDDQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
-        """Initialize an Agent object.
-        
+        """Initialize an Async DDQN Agent
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -493,7 +486,6 @@ class AsyncDDQNAgent():
         self.DQN = model
         self.tau = tau
 
-        
         # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
@@ -613,7 +605,7 @@ class AsyncDDQNAgent():
 
 class AsyncRamDDQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
-        """Initialize an Agent object.
+        """Initialize an Async DDQN Agent for RAM Environments
         
         Params
         ======
@@ -642,7 +634,6 @@ class AsyncRamDDQNAgent():
         self.DQN = model
         self.tau = tau
 
-        
         # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
@@ -670,7 +661,7 @@ class AsyncRamDDQNAgent():
                 self.learn(experiences)
                 
     def act(self, states, eps=0.0):
-        states = torch.tensor(np.array(states), dtype=torch.float32, device=self.device) # Uses fp16, OR torch.float32 for normal version
+        states = torch.tensor(np.array(states), dtype=torch.float32, device=self.device)
         with torch.no_grad():
             q_values = self.policy_net(states)
         if np.random.rand() > eps:
@@ -721,6 +712,21 @@ class AsyncRamDDQNAgent():
 
 class DDQNAgentPER():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
+        """Initialize a DDQN Agent with PER
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            buffer_size (int): replay buffer size
+            batch_size (int):  minibatch size
+            gamma (float): discount factor
+            lr (float): learning rate 
+            update_every (int): how often to update the network
+            replay_after (int): After which replay to be started
+            model(Model): Pytorch Model
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         self.seed = random.seed(seed)
@@ -734,13 +740,16 @@ class DDQNAgentPER():
         self.DQN = model
         self.tau = tau
 
+        # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
 
+        # Replay memory
         self.memory = PERBuffer(buffer_size, batch_size, seed, device)
         self.frame_idx = 0
 
+        # PER parameters
         self.per_beta_start = 0.4
         self.per_beta_frames = 100000
 
@@ -750,11 +759,14 @@ class DDQNAgentPER():
         return min(1.0, self.per_beta_start + frame_idx * (1.0 - self.per_beta_start) / self.per_beta_frames)
 
     def step(self, state, action, reward, next_state, done):
+        # Save experience in replay memory with max priority
         max_priority = self.memory.tree.max() if self.memory.tree.n_entries > 0 else 1.0
         self.memory.add(max_priority, state, action, reward, next_state, done)
 
+        # Learn every UPDATE_EVERY time steps.
         self.t_step = (self.t_step + 1) % self.update_every
         if self.t_step == 0:
+            # If enough samples are available in memory, get random subset and learn
             if self.memory.tree.n_entries > self.replay_after:
                 beta = self._beta_by_frame(self.frame_idx)
                 experiences, idxs, is_weights = self.memory.sample()
@@ -780,6 +792,7 @@ class DDQNAgentPER():
     def learn(self, experiences, idxs, is_weights):
         states, actions, rewards, next_states, dones = zip(*experiences)
 
+        # Convert to tensors
         states = torch.stack(states).to(self.device).float()
         actions = torch.tensor(actions, dtype=torch.long).to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
@@ -787,6 +800,7 @@ class DDQNAgentPER():
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
         is_weights = is_weights.detach().to(self.device).float()
 
+        # Get expected Q values from policy model
         Q_expected_all = self.policy_net(states)
         Q_expected = Q_expected_all.gather(1, actions.unsqueeze(1)).squeeze(1)
 
@@ -797,6 +811,7 @@ class DDQNAgentPER():
             Q_targets_next = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1).detach()
             Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
 
+        # Compute TD errors and loss
         td_errors = Q_expected - Q_targets
         loss = (is_weights * td_errors.pow(2)).mean()
 
@@ -822,6 +837,22 @@ class DDQNAgentPER():
 
 class ComplexDDQNAgentPER():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model, complex_per=True):
+        """Initialize a more Complex Version of a DDQN Agent with PER
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            buffer_size (int): replay buffer size
+            batch_size (int):  minibatch size
+            gamma (float): discount factor
+            lr (float): learning rate 
+            update_every (int): how often to update the network
+            replay_after (int): After which replay to be started
+            model(Model): Pytorch Model
+            complex_per (bool): Whether to use Complex PER or Standard PER
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         self.seed = random.seed(seed)
@@ -836,14 +867,18 @@ class ComplexDDQNAgentPER():
         self.DQN = model
         self.complex_per = complex_per
 
+        # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
 
+        # Optimizer and scheduler
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-5)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.8, patience=5000)
 
+        # Initialize target network
         self.hard_update(self.target_net, self.policy_net)
 
+        # Replay memory (Decide between Complex PER and Standard PER)
         if self.complex_per:
             self.memory = ComplexPERBuffer(buffer_size, batch_size, seed, device, reward_threshold=300)
         else:
@@ -863,6 +898,7 @@ class ComplexDDQNAgentPER():
     def step(self, state, action, reward, next_state, done):
         self.current_episode_reward += reward
 
+        # Save experience in replay memory
         if self.complex_per:
             episode_reward = self.current_episode_reward if done else 0
             self.memory.add(state, action, reward, next_state, done, episode_reward)
@@ -872,6 +908,7 @@ class ComplexDDQNAgentPER():
 
         self.t_step = (self.t_step + 1) % self.update_every
 
+        # Learn every UPDATE_EVERY time steps.
         if self.t_step == 0 and len(self.memory) > self.replay_after:
             experiences = self.memory.sample()
             if experiences is not None:
@@ -892,6 +929,7 @@ class ComplexDDQNAgentPER():
         max_q = action_values.cpu().numpy().max()
         self.q_values_history.append(max_q)
 
+        # Epsilon-greedy action selection with softmax exploration
         if random.random() > eps:
             return np.argmax(action_values.cpu().data.numpy())
         else:
@@ -910,16 +948,20 @@ class ComplexDDQNAgentPER():
             Q_targets_next = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
 
+        # Get expected Q values from policy model
         Q_expected = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
         td_errors = Q_targets - Q_expected
 
+        # Compute loss with importance-sampling weights
         loss = (is_weights * F.smooth_l1_loss(Q_expected, Q_targets, reduction='none')).mean()
 
+        # Minimize the loss
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
         self.optimizer.step()
 
+        # Update priorities in the PER buffer
         priorities = abs(td_errors.detach().cpu().numpy()) + 1e-6
         self.memory.update_priorities(indices, priorities)
 
@@ -934,18 +976,10 @@ class ComplexDDQNAgentPER():
         self.scheduler.step(avg_score)
 
     def soft_update(self, policy_model, target_model, tau):
+        # Soft update: θ'=θ×τ+θ'×(1−τ)
         for target_param, policy_param in zip(target_model.parameters(), policy_model.parameters()):
             target_param.data.copy_(tau * policy_param.data + (1.0 - tau) * target_param.data)
 
     def hard_update(self, target_model, policy_model):
+        # Hard update: copy weights from policy model to target model
         target_model.load_state_dict(policy_model.state_dict())
-
-    def get_stats(self):
-        return {
-            'avg_loss': np.mean(self.loss_history[-100:]) if self.loss_history else 0,
-            'avg_q_value': np.mean(self.q_values_history[-100:]) if self.q_values_history else 0,
-            'avg_td_error': np.mean(self.td_errors_history[-100:]) if self.td_errors_history else 0,
-            'buffer_size': len(self.memory),
-            'learning_rate': self.optimizer.param_groups[0]['lr'],
-            'learn_steps': self.learn_step
-        }

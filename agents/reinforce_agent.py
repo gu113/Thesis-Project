@@ -5,12 +5,9 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import random
 
-# Import autocast for mixed precision
-from torch.cuda.amp import autocast # ADDED/CONFIRMED
-
-class REINFORCEAgent(): # This class is not currently used by Pong_REINFORCEy.py, but corrected for completeness
+class REINFORCEAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, lr, policy):
-        """Initialize an Agent object.
+        """Initialize a REINFORCE Agent
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -46,10 +43,8 @@ class REINFORCEAgent(): # This class is not currently used by Pong_REINFORCEy.py
 
                 
     def act(self, state):
-        """Returns action, log_prob for given state as per current policy."""
-        
-        # Ensure state is a float32 tensor on the correct device with batch dimension
-        # Assuming state is already a PyTorch tensor on the correct device when passed to act
+
+        # Ensure state is a float32 tensor on the correct device
         if state.ndim == 3:
             state = state.unsqueeze(0)
 
@@ -67,7 +62,7 @@ class REINFORCEAgent(): # This class is not currently used by Pong_REINFORCEy.py
         log_probs = torch.cat(self.log_probs)
         returns   = torch.cat(returns).detach()
 
-        # Normalize returns (ADDED)
+        # Normalize returns
         if len(returns) > 1:
             returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
@@ -96,6 +91,17 @@ class REINFORCEAgent(): # This class is not currently used by Pong_REINFORCEy.py
 
 class ComplexREINFORCEAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, lr, policy_model):
+        """Initialize a more Complex REINFORCE Agent with mixed precision training support
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            gamma (float): discount factor
+            lr (float): Learning rate
+            policy_model(Model): Pytorch Policy Model
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         random.seed(seed)
@@ -104,16 +110,20 @@ class ComplexREINFORCEAgent():
         self.lr = lr
         self.gamma = gamma
 
+        # Policy Network
         self.policy_net = policy_model(input_shape, action_size).to(self.device)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
 
+        # Mixed precision scaler
         self.scaler = torch.amp.GradScaler('cuda') if self.device.type == 'cuda' else None
 
+        # Memory
         self.log_probs = []
         self.rewards = []
         self.masks = []
 
     def step(self, log_prob, reward, done):
+        # Save experience in memory
         self.log_probs.append(log_prob)
         self.rewards.append(torch.tensor([reward], dtype=torch.float32).to(self.device))
         self.masks.append(torch.tensor([1 - done], dtype=torch.float32).to(self.device))
@@ -122,6 +132,7 @@ class ComplexREINFORCEAgent():
         self.policy_net.eval() 
         action_logits, _ = self.policy_net(state) 
         
+        # Create a categorical distribution over the action logits
         m = Categorical(logits=action_logits) 
         
         action = m.sample()
@@ -132,11 +143,13 @@ class ComplexREINFORCEAgent():
     def learn(self):
         self.policy_net.train()
 
+        # Compute returns
         returns = self.compute_returns(next_value=0, gamma=self.gamma) 
 
         log_probs = torch.cat(self.log_probs)
         returns = torch.cat(returns).detach()
 
+        # Normalize returns
         if len(returns) > 1:
             returns = (returns - returns.mean()) / (returns.std() + 1e-6)
 
@@ -144,6 +157,7 @@ class ComplexREINFORCEAgent():
 
         self.optimizer.zero_grad()
         
+        # Backward pass and optimization step with mixed precision support
         if self.scaler:
             self.scaler.scale(policy_loss).backward() 
             self.scaler.step(self.optimizer)
@@ -155,6 +169,7 @@ class ComplexREINFORCEAgent():
         self.reset_memory() 
 
     def reset_memory(self):
+        # Clear the memory buffers
         del self.log_probs[:]
         del self.rewards[:]
         del self.masks[:]

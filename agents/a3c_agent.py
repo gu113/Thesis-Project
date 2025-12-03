@@ -9,6 +9,20 @@ from collections import deque
 
 class A3CAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, lr_actor, lr_critic, update_every, actor_m, critic_m, value_loss_coef=0.5, entropy_coef=0.01):
+        """Initialize an A3C Agent
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            gamma (float): discount factor
+            lr_actor (float): Actor learning rate
+            lr_critic (float): Critic learning rate 
+            update_every (int): how often to update the network
+            actor_m(Model): Pytorch Actor Model
+            critic_m(Model): PyTorch Critic Model
+            """
         self.input_shape = input_shape
         self.action_size = action_size
         random.seed(seed)
@@ -21,12 +35,15 @@ class A3CAgent():
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
 
+        # Actor-Network and Critic-Network
         self.actor_net = actor_m(input_shape, action_size).to(self.device)
         self.critic_net = critic_m(input_shape).to(self.device)
 
+        # Optimizers for Actor and Critic
         self.actor_optimizer = optim.Adam(self.actor_net.parameters(), lr=self.lr_actor)
         self.critic_optimizer = optim.Adam(self.critic_net.parameters(), lr=self.lr_critic)
 
+        # Memory for storing experiences
         self.log_probs = []
         self.values = []
         self.rewards = []
@@ -37,12 +54,15 @@ class A3CAgent():
     def act(self, state):
         self.actor_net.eval()
         state_tensor = torch.from_numpy(state).unsqueeze(0).float().to(self.device)
+
         with torch.no_grad():
             action_logits = self.actor_net(state_tensor)
+
         m = Categorical(logits=action_logits)
         action = m.sample()
         log_prob = m.log_prob(action)
         entropy = m.entropy().mean()
+
         return action.item(), log_prob, entropy
 
     def step(self, state, log_prob, entropy, reward, done, next_state_raw):
@@ -72,22 +92,27 @@ class A3CAgent():
         entropies_batch = torch.stack(self.entropies)
         returns = returns.detach()
         
+        # Calculate advantage
         advantage = returns - values_batch
         if len(advantage) > 1 and advantage.std() > 1e-6:
             advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-6)
 
+        # Calculate losses
         actor_loss = -(log_probs_batch * advantage.squeeze(-1).detach()).mean()
         critic_loss = F.mse_loss(values_batch.squeeze(-1), returns.squeeze(-1))
         entropy_loss = entropies_batch.mean()
         total_loss = actor_loss + self.value_loss_coef * critic_loss - self.entropy_coef * entropy_loss
         
+        # Backpropagation and optimization
         self.actor_optimizer.zero_grad()
         self.critic_optimizer.zero_grad()
         total_loss.backward()
 
+        # Gradient clipping
         torch.nn.utils.clip_grad_norm_(self.actor_net.parameters(), 0.5)
         torch.nn.utils.clip_grad_norm_(self.critic_net.parameters(), 0.5)
 
+        # Update parameters
         self.actor_optimizer.step()
         self.critic_optimizer.step()
 

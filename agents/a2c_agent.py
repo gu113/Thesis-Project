@@ -8,7 +8,7 @@ import random
 
 class A2CAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, alpha, beta, update_every, actor_m, critic_m):
-        """Initialize an Agent object.
+        """Initialize an A2C Agent
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -68,7 +68,6 @@ class A2CAgent():
            self.reset_memory()
                 
     def act(self, state):
-        """Returns action, log_prob, entropy for given state as per current policy."""
         
         state = torch.from_numpy(state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         action_probs = self.actor_net(state)
@@ -79,8 +78,6 @@ class A2CAgent():
 
         return action.item(), log_prob, entropy
 
-        
-        
     def learn(self, next_state):
         next_state = torch.from_numpy(next_state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         next_value = self.critic_net(next_state)
@@ -123,7 +120,23 @@ class A2CAgent():
 
 class ComplexA2CAgent:
     def __init__(self, input_shape, action_size, seed, device, gamma, alpha, beta, update_every, actor_m, critic_m, value_loss_coef=0.5, entropy_coef=0.01, gae_lambda=0.95):
-        """Initialize an A2C Agent object."""
+        """Initialize a more Complex A2C Agent 
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            gamma (float): discount factor
+            alpha (float): Actor learning rate
+            beta (float): Critic learning rate 
+            update_every (int): how often to update the network
+            actor_m(Model): Pytorch Actor Model
+            critic_m(Model): PyTorch Critic Model
+            value_loss_coef (float): Coefficient for value loss
+            entropy_coef (float): Coefficient for entropy regularization
+            gae_lambda (float): Lambda for Generalized Advantage Estimation
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         random.seed(seed)
@@ -155,9 +168,6 @@ class ComplexA2CAgent:
         self.t_step = 0
 
     def step(self, state, log_prob, entropy, reward, done):
-        """
-        Stores experience for the current batch of steps.
-        """
         # Save experience in memory
         self.states.append(torch.from_numpy(state).float().to(self.device))
         self.log_probs.append(log_prob)
@@ -171,7 +181,6 @@ class ComplexA2CAgent:
             self.reset_memory()
 
     def act(self, state):
-        """Returns action, log_prob, and entropy for given state as per current policy."""
         self.actor_net.eval()
 
         state_tensor = torch.from_numpy(state).unsqueeze(0).float().to(self.device)
@@ -188,9 +197,6 @@ class ComplexA2CAgent:
         return action.item(), log_prob, entropy
 
     def learn(self, next_state):
-        """
-        Performs policy and value updates using the collected batch of trajectory.
-        """
         self.actor_net.train()
         self.critic_net.train()
 
@@ -201,7 +207,7 @@ class ComplexA2CAgent:
         masks_batch = torch.cat(self.masks).squeeze()
         entropies_batch = torch.stack(self.entropies)
         
-        # CRITICAL FIX: Get values for the entire batch and the next state
+        # Get values for the entire batch and the next state
         values_batch = self.critic_net(states_batch).squeeze(-1)
         
         with torch.no_grad():
@@ -224,7 +230,7 @@ class ComplexA2CAgent:
         advantages = torch.stack(advantages).to(self.device)
         returns = advantages + values_batch
 
-        # Normalize advantages (optional but beneficial for stability)
+        # Normalize advantages
         if len(advantages) > 1 and advantages.std() > 1e-6:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
 
@@ -253,7 +259,7 @@ class ComplexA2CAgent:
         self.critic_optimizer.step()
 
     def reset_memory(self):
-        """Clears the collected states, log probabilities, rewards, masks, and entropies."""
+        # Clears the collected states, log probabilities, rewards, masks, and entropies
         del self.states[:]
         del self.log_probs[:]
         del self.rewards[:]

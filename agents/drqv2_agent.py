@@ -10,11 +10,23 @@ from utils.replay_buffer import DrQv2Buffer
 from models.drqv2_cnn import DrQv2CNN
 
 class DrQAgent:
-    """DrQ-v2 Agent with data regularization"""
-    def __init__(self, state_size, action_size, device='cuda', lr=1e-4, gamma=0.99,
-                 tau=0.01, batch_size=128, buffer_size=100000, target_update_freq=2,
-                 feature_dim=50, std_schedule=0.1, num_aug=2):
-        
+    def __init__(self, state_size, action_size, device='cuda', lr=1e-4, gamma=0.99, tau=0.01, batch_size=128, buffer_size=100000, target_update_freq=2, feature_dim=50, std_schedule=0.1, num_aug=2):
+        """Initialize a Simple DrQ-v2 Agent
+        Params
+        ======
+            state_size (tuple): Dimension of each state
+            action_size (int): Dimension of each action
+            device (str): Device to use ('cuda' or 'cpu')
+            lr (float): Learning rate
+            gamma (float): Discount factor
+            tau (float): Soft update parameter
+            batch_size (int): Mini-batch size
+            buffer_size (int): Replay buffer size
+            target_update_freq (int): Frequency of target network updates
+            feature_dim (int): Dimension of feature representation
+            std_schedule (float): Standard deviation for exploration noise
+            num_aug (int): Number of augmentations for target Q-value estimation
+        """
         self.state_size = state_size
         self.action_size = action_size
         self.device = device
@@ -46,7 +58,6 @@ class DrQAgent:
         self.updates = 0
         
     def act(self, state, eps=0.0):
-        """Select action with exploration noise"""
         if not isinstance(state, torch.Tensor):
             state = torch.FloatTensor(state).to(self.device)
         
@@ -54,6 +65,8 @@ class DrQAgent:
             state = state.unsqueeze(0)
         
         self.q_network.eval()
+
+        # Select action with no exploration noise
         with torch.no_grad():
             q1, q2 = self.q_network(state)
             q_values = torch.min(q1, q2)  # Conservative Q-learning
@@ -67,7 +80,8 @@ class DrQAgent:
         return action
     
     def step(self, state, action, reward, next_state, done):
-        """Store transition and update if ready"""
+
+        # Store transition and update if ready
         self.memory.add(state, action, reward, next_state, done)
         self.total_steps += 1
         
@@ -76,7 +90,8 @@ class DrQAgent:
             self.learn()
     
     def learn(self):
-        """Update Q-networks using DrQ-v2 objective"""
+
+        # Sample a batch from memory
         batch = self.memory.sample(self.batch_size)
         if batch is None:
             return
@@ -126,28 +141,29 @@ class DrQAgent:
             self.soft_update()
     
     def soft_update(self):
-        """Soft update target network"""
+        # Soft update model parameters
         for target_param, param in zip(self.q_target.parameters(), self.q_network.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
-    
-    def save(self, filepath):
-        """Save model"""
-        torch.save({
-            'q_network_state_dict': self.q_network.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, filepath)
-    
-    def load(self, filepath):
-        """Load model"""
-        checkpoint = torch.load(filepath)
-        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-        self.q_target.load_state_dict(checkpoint['q_network_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
 
 class DrQv2Agent:
-    def __init__(self, state_size, action_size, device='cuda', lr=1e-4, gamma=0.99,
-                 tau=0.01, batch_size=128, buffer_size=500000, feature_dim=50,
-                 update_every_steps=2, num_seed_steps=5000, stddev_schedule='linear(1.0,0.1,100000)'):
+    def __init__(self, state_size, action_size, device='cuda', lr=1e-4, gamma=0.99, tau=0.01, batch_size=128, buffer_size=500000, feature_dim=50, update_every_steps=2, num_seed_steps=5000, stddev_schedule='linear(1.0,0.1,100000)'):
+        """Initialize a DrQ-v2 Agent
+        Params
+        ======
+            state_size (tuple): Dimension of each state
+            action_size (int): Dimension of each action
+            device (str): Device to use ('cuda' or 'cpu')
+            lr (float): Learning rate
+            gamma (float): Discount factor
+            tau (float): Soft update parameter
+            batch_size (int): Mini-batch size
+            buffer_size (int): Replay buffer size
+            feature_dim (int): Dimension of feature representation
+            update_every_steps (int): Frequency of network updates
+            num_seed_steps (int): Number of initial random steps
+            stddev_schedule (str): Schedule for exploration noise standard deviation
+        """
         
         self.state_size = state_size
         self.action_size = action_size
@@ -160,18 +176,22 @@ class DrQv2Agent:
         
         self.stddev_schedule = self.parse_schedule(stddev_schedule)
         
+        # Q-Networks
         self.q_network = DrQv2CNN(state_size, action_size, feature_dim).to(device)
         self.q_target = DrQv2CNN(state_size, action_size, feature_dim).to(device)
         self.q_target.load_state_dict(self.q_network.state_dict())
         
+        # Optimizer
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr, betas=(0.9, 0.999))
         
+        # Replay buffer
         self.memory = DrQv2Buffer(buffer_size, state_size, device)
         
         self.step_count = 0
         self.episode_count = 0
         
     def parse_schedule(self, schedule_str):
+        # Simple parser for linear schedule strings
         if schedule_str.startswith('linear'):
             params = schedule_str[7:-1].split(',')
             start_val = float(params[0])
@@ -181,18 +201,9 @@ class DrQv2Agent:
         else:
             return lambda step: float(schedule_str)
     
-    # Modified `act` to expect a torch.Tensor (e.g., float16)
     def act(self, state_tensor, training=True):
-        # Ensure state_tensor is float32 for model input (normalize from 0-255 if needed)
-        # Assuming input state_tensor is 0-255 uint8 or float16 from env.reset/step
-        # If it's 0-255 uint8, convert to float32 and normalize
-        # If it's float16 (0-255), convert to float32 and normalize
-        
-        # This conversion depends on what `env.reset()[0]` and `env.step()[0]` return
-        # Given your `torch.tensor(..., dtype=torch.float16)` conversion in main.py,
-        # the state_tensor will be float16 with values potentially up to 255.
-        # We need to convert it to float32 and normalize it to 0-1 range for the CNN.
-        
+
+        # Ensure state_tensor is float32 for model input
         if state_tensor.dtype != torch.float32:
             state_tensor = (state_tensor.float() / 255.0) # Normalize to 0-1 and convert to float32
         
@@ -202,12 +213,10 @@ class DrQv2Agent:
         if training and self.step_count < self.num_seed_steps:
             return random.randrange(self.action_size)
         
+        # Select action
         self.q_network.eval()
         with torch.no_grad():
-            # Use torch.amp.autocast("cuda") here if your model supports mixed precision
-            # and you want to ensure the forward pass benefits.
-            # However, the DrQv2 paper typically emphasizes it in the `learn` step for backward pass.
-            q1, q2 = self.q_network(state_tensor.to(self.device)) # Ensure tensor is on device
+            q1, q2 = self.q_network(state_tensor.to(self.device))
             q_values = torch.min(q1, q2)
             
             if training:
@@ -220,16 +229,14 @@ class DrQv2Agent:
         
         return action
     
-    # Modified `step` to expect torch.Tensor for state/next_state
     def step(self, state, action, reward, next_state, done):
         self.step_count += 1
-        
-        # Convert torch.Tensor (e.g., float16 from main.py) to normalized numpy float32
-        # for storage in the EfficientReplayBuffer.
-        # Assuming state values are 0-255 from env, need to normalize them to 0-1.
+
+        # Normalize states to float32 [0,1] for storage
         state_np_normalized = (state.cpu().numpy().astype(np.float32) / 255.0)
         next_state_np_normalized = (next_state.cpu().numpy().astype(np.float32) / 255.0)
 
+        # Store transition
         self.memory.add(state_np_normalized, action, reward, next_state_np_normalized, done)
         
         if done:
@@ -247,13 +254,13 @@ class DrQv2Agent:
             
         states, actions, rewards, next_states, dones = batch
         
-        # States and next_states are already normalized float32 tensors from buffer.sample()
-        # Use autocast for learning if you desire mixed precision training
+        # Compute current Q-values
         with torch.amp.autocast("cuda"): 
             current_q1, current_q2 = self.q_network(states, augment=True)
             current_q1 = current_q1.gather(1, actions.unsqueeze(1)).squeeze(1)
             current_q2 = current_q2.gather(1, actions.unsqueeze(1)).squeeze(1)
             
+            # Compute target Q-values
             with torch.no_grad():
                 next_q1, next_q2 = self.q_network(next_states, augment=True)
                 next_q = torch.min(next_q1, next_q2)
@@ -266,14 +273,15 @@ class DrQv2Agent:
                 
                 target_q = rewards + (self.gamma * target_q * (~dones))
             
+            # Compute losses
             loss_q1 = F.mse_loss(current_q1, target_q)
             loss_q2 = F.mse_loss(current_q2, target_q)
             total_loss = loss_q1 + loss_q2
             
+            # Optimize
             self.optimizer.zero_grad()
             total_loss.backward()
         
-        # torch.nn.utils.clip_grad_norm_ should be outside autocast
         torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), 10.0)
         self.optimizer.step()
         
@@ -283,6 +291,7 @@ class DrQv2Agent:
         for target_param, param in zip(self.q_target.parameters(), self.q_network.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
     
+    # Default Save Method for DrQ-v2 Agent
     def save(self, filepath):
         torch.save({
             'q_network_state_dict': self.q_network.state_dict(),
@@ -292,6 +301,7 @@ class DrQv2Agent:
             'episode_count': self.episode_count,
         }, filepath)
     
+    # Default Load Method for DrQ-v2 Agent
     def load(self, filepath):
         checkpoint = torch.load(filepath, map_location=self.device)
         self.q_network.load_state_dict(checkpoint['q_network_state_dict'])

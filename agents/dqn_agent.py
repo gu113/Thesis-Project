@@ -7,7 +7,7 @@ from utils.replay_buffer import ReplayBuffer
 
 class DQNAgent():
     def __init__(self, input_shape, action_size, seed, device, buffer_size, batch_size, gamma, lr, tau, update_every, replay_after, model):
-        """Initialize an Agent object.
+        """Initialize a DQN Agent
         
         Params
         ======
@@ -36,7 +36,6 @@ class DQNAgent():
         self.DQN = model
         self.tau = tau
 
-        
         # Q-Network
         self.policy_net = self.DQN(input_shape, action_size).to(self.device)
         self.target_net = self.DQN(input_shape, action_size).to(self.device)
@@ -67,7 +66,6 @@ class DQNAgent():
                 self.learn(experiences)
                 
     def act(self, state, eps=0.):
-        """Returns actions for given state as per current policy."""
         
         #state = torch.from_numpy(state).unsqueeze(0).to(self.device) # For Numpy input
         state = state.unsqueeze(0).to(self.device)  # For Tensor input

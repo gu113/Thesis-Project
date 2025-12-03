@@ -6,7 +6,7 @@ import random
 
 class PPOAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, alpha, beta, tau, update_every, batch_size, ppo_epoch, clip_param, actor_m, critic_m):
-        """Initialize an Agent object.
+        """Initialize a PPO Agent
         Params
         ======
             input_shape (tuple): dimension of each state (C, H, W)
@@ -73,7 +73,6 @@ class PPOAgent():
            self.reset_memory()
                 
     def act(self, state):
-        """Returns action, log_prob, value for given state as per current policy."""
         
         state = torch.from_numpy(state).unsqueeze(0).float().to(self.device) # Added float() to fix type mismatch
         action_probs = self.actor_net(state)
@@ -150,6 +149,7 @@ class PPOAgent():
     
 
 class PPOMemory:
+    """Memory class for storing trajectory segments for PPO Agent"""
     def __init__(self):
         self.states = []
         self.actions = []
@@ -175,7 +175,6 @@ class PPOMemory:
         self.values = []
 
     def get_full_trajectory(self):
-        # Using torch.stack to correctly create a batch dimension
         states = torch.stack(self.states).float() 
         actions = torch.cat(self.actions) 
         rewards = torch.tensor(self.rewards, dtype=torch.float32)
@@ -188,6 +187,24 @@ class PPOMemory:
 
 class ComplexPPOAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, alpha, beta, gae_lambda, update_every_steps, batch_size, ppo_epoch, clip_param, actor_m, critic_m):
+        """Initialize a more Complex PPO Agent ()
+        Params
+        ======
+            input_shape (tuple): dimension of each state (C, H, W)
+            action_size (int): dimension of each action
+            seed (int): random seed
+            device(string): Use Gpu or CPU
+            gamma (float): discount factor
+            alpha (float): Actor learning rate
+            beta (float): Critic learning rate 
+            gae_lambda (float): Lambda for Generalized Advantage Estimation
+            update_every_steps: How often to update network
+            batch_size (int): Mini Batch size to be used every epoch 
+            ppo_epoch(int): Total No epoch for ppo
+            clip_param(float): Clip Paramter
+            actor_m(Model): Pytorch Actor Model
+            critic_m(Model): PyTorch Critic Model
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         self.seed = random.seed(seed)
@@ -217,6 +234,7 @@ class ComplexPPOAgent():
         self.scaler = torch.amp.GradScaler("cuda") if self.device.type == 'cuda' else None
 
     def step(self, state_tensor, action, reward, next_state_tensor, done, log_prob, value):
+        # Save experience in memory
         self.memory.add(
             state_tensor, 
             torch.tensor([action], dtype=torch.long).to(self.device), 
@@ -259,9 +277,11 @@ class ComplexPPOAgent():
         gae = 0
 
         with torch.no_grad():
+            # Compute GAE Advantages and Returns
             last_value = self.critic_net(states[-1].unsqueeze(0)).squeeze(-1) 
             last_value = last_value.item() * (1 - dones[-1].item()) 
 
+            # Iterate over the trajectory in reverse to compute GAE
             for i in reversed(range(len(rewards))):
                 current_reward = rewards[i].item()
                 current_value = values[i].item() 
@@ -280,64 +300,84 @@ class ComplexPPOAgent():
 
             returns = torch.tensor(returns, dtype=torch.float32).to(self.device)
             advantages = torch.tensor(advantages, dtype=torch.float32).to(self.device)
-            
+        
+        # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         indices = np.arange(len(states))
         
+        # PPO Update Loop
         for _ in range(self.ppo_epoch):
             np.random.shuffle(indices)
             for i in range(0, len(states), self.batch_size):
                 batch_indices = indices[i:i + self.batch_size]
 
-                batch_states = states[batch_indices] 
+                # Extract mini-batches for PPO update
+                batch_states = states[batch_indices]
                 batch_actions = actions[batch_indices]
                 batch_old_log_probs = old_log_probs[batch_indices]
                 batch_returns = returns[batch_indices]
                 batch_advantages = advantages[batch_indices]
 
+                # Perform forward and backward pass
                 if self.scaler:
                     with torch.amp.autocast(device_type="cuda"):
+
+                        # Forward pass with mixed precision
                         action_dist = self.actor_net(batch_states)
                         new_log_probs = action_dist.log_prob(batch_actions)
                         
+                        # Cast old_log_probs and advantages to match new_log_probs dtype
                         batch_old_log_probs_cast = batch_old_log_probs.to(new_log_probs.dtype) 
                         batch_advantages_cast = batch_advantages.to(new_log_probs.dtype)
 
+                        # Compute ratio and surrogate losses
                         ratio = (new_log_probs - batch_old_log_probs_cast).exp()
                         surr1 = ratio * batch_advantages_cast
                         surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * batch_advantages_cast
                         
+                        # Calculate actor loss using the clipped surrogate objective
                         actor_loss = -torch.min(surr1, surr2).mean()
                         
+                        # Forward pass for critic with mixed precision
                         value_pred = self.critic_net(batch_states).squeeze(-1)
                         
                         batch_returns_cast = batch_returns.to(value_pred.dtype)
 
+                        # Compute critic loss
                         critic_loss = F.mse_loss(value_pred, batch_returns_cast)
 
+                        # Compute entropy loss for exploration
                         entropy_loss = action_dist.entropy().mean()
                         loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy_loss 
                 else: 
+                    # Standard precision forward pass
                     action_dist = self.actor_net(batch_states)
                     new_log_probs = action_dist.log_prob(batch_actions)
                     
+                    # Compute ratio and surrogate losses
                     ratio = (new_log_probs - batch_old_log_probs).exp()
                     surr1 = ratio * batch_advantages
                     surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * batch_advantages
                     
+                    # Calculate actor loss using the clipped surrogate objective
                     actor_loss = -torch.min(surr1, surr2).mean()
                     
+                    # Forward pass for critic with standard precision
                     value_pred = self.critic_net(batch_states).squeeze(-1)
                     
+                    # Compute critic loss
                     critic_loss = F.mse_loss(value_pred, batch_returns)
 
+                    # Compute entropy loss for exploration
                     entropy_loss = action_dist.entropy().mean()
                     loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy_loss 
 
+                # Minimize the loss
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
                 
+                # Backward pass and optimization steps
                 if self.scaler:
                     self.scaler.scale(loss).backward()
                     self.scaler.unscale_(self.actor_optimizer)

@@ -9,6 +9,7 @@ from models.actor_critic_cnn import TRPOActorCnn, TRPOCriticCnn
 
 
 class TRPOMemory:
+    """Memory class to store trajectory segments for TRPO."""
     def __init__(self):
         self.states = []
         self.actions = []
@@ -34,7 +35,6 @@ class TRPOMemory:
         self.values = []
 
     def get_full_trajectory(self):
-        # Using torch.stack to correctly create a batch dimension
         states = torch.stack(self.states).float() 
         actions = torch.cat(self.actions) 
         rewards = torch.tensor(self.rewards, dtype=torch.float32)
@@ -47,6 +47,25 @@ class TRPOMemory:
 
 class TRPOAgent():
     def __init__(self, input_shape, action_size, seed, device, gamma, alpha, beta, gae_lambda, update_every_steps, kl_constraint, cg_steps, ls_steps, entropy_beta, actor_m, critic_m):
+        """Initialize a TRPO Agent
+        Params
+        ======
+        input_shape (tuple): Dimension of each state
+        action_size (int): Dimension of each action
+        seed (int): Random seed
+        device (torch.device): Device to run the model on
+        gamma (float): Discount factor
+        alpha (float): Learning rate for actor network
+        beta (float): Learning rate for critic network
+        gae_lambda (float): GAE lambda parameter
+        update_every_steps (int): Number of steps between each update
+        kl_constraint (float): KL divergence constraint for TRPO
+        cg_steps (int): Number of conjugate gradient steps
+        ls_steps (int): Number of line search steps
+        entropy_beta (float): Coefficient for entropy bonus
+        actor_m (nn.Module): Actor network model
+        critic_m (nn.Module): Critic network model
+        """
         self.input_shape = input_shape
         self.action_size = action_size
         self.seed = random.seed(seed)
@@ -125,6 +144,7 @@ class TRPOAgent():
             last_value = self.critic_net(states[-1].unsqueeze(0)).squeeze(-1) 
             last_value = last_value.item() * (1 - dones[-1].item()) 
 
+            # Compute GAE and returns
             for i in reversed(range(len(rewards))):
                 current_reward = rewards[i].item()
                 current_value = values[i].item() 
@@ -154,7 +174,7 @@ class TRPOAgent():
         # Calculate entropy of the new policy for the entropy bonus
         entropy = action_dist.entropy().mean()
 
-        # Calculate gradients of L on actor parameters, including the entropy bonus
+        # Calculate gradients of L on actor parameters
         loss = -(ratio * advantages).mean() - self.entropy_beta * entropy
         grad = torch.autograd.grad(loss, self.actor_net.parameters(), retain_graph=True)
         grad_flat = torch.cat([g.reshape(-1) for g in grad])
@@ -169,7 +189,6 @@ class TRPOAgent():
         
         full_step = scale * step_dir
         
-        # Line Search
         with torch.no_grad():
             old_loss = -(ratio * advantages).mean() - self.entropy_beta * entropy
         
@@ -236,14 +255,13 @@ class TRPOAgent():
         return x
 
     def _set_actor_params(self, params):
-        # Helper function to set actor network parameters
-        # params is a list of tensors
+        # Set actor network parameters
         for p, new_p in zip(self.actor_net.parameters(), params):
             p.data.copy_(new_p)
 
     @property
     def _param_indices(self):
-        # Helper to get the start and end indices of each parameter in a flattened tensor
+        # Get the start and end indices of each parameter in a flattened tensor
         indices = []
         offset = 0
         for p in self.actor_net.parameters():
