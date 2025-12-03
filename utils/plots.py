@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def plot_scores_simple(scores, episode_num):
+    """Simple plotting function to visualize scores over episodes"""
     plt.figure(figsize=(10, 6))
     plt.plot(scores)
     plt.title(f'Training Progress - Episodes {episode_num-len(scores)+1} to {episode_num}')
@@ -13,6 +14,7 @@ def plot_scores_simple(scores, episode_num):
 
 
 def plot_scores(scores, episode_num):
+    """Plotting function to visualize scores with moving average over episodes"""
     window = 100
     moving_average = np.convolve(scores, np.ones(window)/window, mode='valid')
 
@@ -34,6 +36,7 @@ def plot_scores(scores, episode_num):
 
 
 def plot_scores_pong(scores, enemy_scores, episode_num):
+    """Plotting function to visualize scores and enemy scores with moving averages over episodes"""
     window = 100
     moving_average = np.convolve(scores, np.ones(window)/window, mode='valid')
     enemy_moving_average = np.convolve(enemy_scores, np.ones(window)/window, mode='valid')
@@ -57,6 +60,7 @@ def plot_scores_pong(scores, enemy_scores, episode_num):
 
 
 def plot_multiple_curves(all_scores, episode_num, hyperparameter):
+    """Plotting function to compare multiple score curves with moving averages over episodes"""
     window = 100
     plt.figure(figsize=(12, 8))
 

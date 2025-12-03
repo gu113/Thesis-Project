@@ -1,5 +1,6 @@
 import gymnasium as gym
 
+# Fire Reset Wrapper
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -8,16 +9,18 @@ class FireResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        # First FIRE
-        obs, _, terminated, truncated, _ = self.env.step(self.fire_action)
+    
+        obs, _, terminated, truncated, _ = self.env.step(self.fire_action) # Take first FIRE action
         if terminated or truncated:
             obs, info = self.env.reset(**kwargs)
-        # Second FIRE
-        obs, _, terminated, truncated, _ = self.env.step(self.fire_action)
+
+        obs, _, terminated, truncated, _ = self.env.step(self.fire_action) # Take second FIRE action
         if terminated or truncated:
             obs, info = self.env.reset(**kwargs)
+
         return obs, info
 
+# Fire on Life Loss Wrapper
 class FireOnLifeLoss(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -27,9 +30,10 @@ class FireOnLifeLoss(gym.Wrapper):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         self.last_lives = info.get('lives', None)
+        
         # FIRE twice on reset
         for _ in range(2):
-            obs, _, terminated, truncated, info = self.env.step(self.fire_action)
+            obs, _, terminated, truncated, info = self.env.step(self.fire_action) 
             if terminated or truncated:
                 obs, info = self.env.reset(**kwargs)
         self.last_lives = info.get('lives', None)

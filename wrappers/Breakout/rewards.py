@@ -2,6 +2,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import Wrapper
 
+# Custom Breakout Reward Modifier Wrapper
 class BreakoutRewardWrapper(Wrapper):
     def __init__(self, env):
         super(BreakoutRewardWrapper, self).__init__(env)
@@ -22,18 +23,18 @@ class BreakoutRewardWrapper(Wrapper):
 
         shaped_reward = 0
 
-        # Get current lives from the info dictionary
+        # Get current lives
         current_lives = self.env.unwrapped.ale.lives()
 
-        # Ball hit brick (environment gives +1 to +5)
+        # Ball hits a brick (environment gives +1 reward)
         if reward > 0:
             shaped_reward += 1
 
-        # Life lost (missed ball)
+        # Life lost (environment gives -1 reward)
         if current_lives < self.last_lives:
             shaped_reward -= 1
 
-        # Small time-alive bonus (encourages longer play)
+        # Small time-alive bonus
         shaped_reward += 0.0001
 
         # Update last_lives for the next step's comparison

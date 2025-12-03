@@ -16,7 +16,7 @@ class RewardModifierWrapper(gym.Wrapper):
 
         return state, reward, terminated, truncated, info
 
-# Custom Reward Modifier Wrapper
+# Custom Complex Reward Modifier Wrapper
 class ComplexRewardModifierWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)

@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import cv2
 
+# Original Preprocess Frame Function from Deep Q-Learning Implementations
 def preprocess_frame(screen, exclude, output):
     """Preprocess Image.
         
@@ -25,6 +26,8 @@ def preprocess_frame(screen, exclude, output):
     screen = cv2.resize(screen, (output, output), interpolation = cv2.INTER_AREA)
     return screen
 
+
+# Original Stack Frames Function from Deep Q-Learning Implementations
 def stack_frame(stacked_frames, frame, is_new):
     """Stacking Frames.
         

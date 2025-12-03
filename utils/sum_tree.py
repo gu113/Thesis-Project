@@ -4,7 +4,7 @@ import weakref
 import torch
 
 class SumTree:
-    """Sum Tree data structure for efficient sampling"""
+    """Sum Tree data structure"""
     def __init__(self, capacity):
         self.capacity = capacity
         self.tree = np.zeros(2 * capacity - 1)
@@ -66,11 +66,10 @@ class SumTree:
 
 
 class SumTreewithTensorManagement:
-    """Sum Tree with explicit tensor management to prevent memory leaks"""
+    """Sum Tree data structure with tensor management to prevent memory leaks"""
     def __init__(self, capacity):
         self.capacity = capacity
         self.tree = np.zeros(2 * capacity - 1)
-        # Store each component separately to avoid object array issues
         self.states = [None] * capacity
         self.actions = [None] * capacity  
         self.rewards = [None] * capacity
@@ -103,7 +102,7 @@ class SumTreewithTensorManagement:
     def add(self, p, experience):
         idx = self.write + self.capacity - 1
         
-        # Explicitly clear old tensors
+        # Clear old tensors
         self._clear_position(self.write)
         
         # Store experience components
@@ -123,7 +122,6 @@ class SumTreewithTensorManagement:
             self.n_entries += 1
 
     def _clear_position(self, pos):
-        """Explicitly clear tensors at position to prevent memory leaks"""
         if self.states[pos] is not None:
             del self.states[pos]
         if self.actions[pos] is not None:
@@ -171,17 +169,16 @@ class SumTreewithTensorManagement:
         return np.max(self.tree[leaf_start : leaf_start + self.n_entries])
     
     def clear(self):
-        """Explicitly clear all stored tensors"""
         for i in range(self.capacity):
             self._clear_position(i)
         self.tree.fill(0)
         self.write = 0
         self.n_entries = 0
-        # Force garbage collection
-        gc.collect()
+        gc.collect() # Collect garbage to free up memory
 
 
 class RainbowSumTree:
+    """Sum Tree data structure for the Rainbow algorithm"""
     def __init__(self, capacity):
         self.capacity = capacity
         self.tree = np.zeros(2 * capacity - 1)
@@ -230,24 +227,21 @@ class RainbowSumTree:
     
 
 class RainbowSumTreeGPU:
+    """Sum Tree data structure for the Rainbow algorithm on GPU"""
     def __init__(self, capacity, device):
         self.device = device
         self.capacity = capacity
-        # The tree and data are now PyTorch tensors on the specified device
         self.tree = torch.zeros(2 * capacity - 1, dtype=torch.float32, device=device)
-        self.data_store = [None] * capacity  # Store Python objects on CPU for now
+        self.data_store = [None] * capacity  # Store Python objects on CPU
         self.data_ptr = 0
         self.n_entries = 0
         
     def _propagate(self, idx, change):
-        # We'll use a loop here, as there's no easy vectorized way to do this
-        # on the GPU without a custom kernel. This is a remaining bottleneck.
         while idx != 0:
             idx = (idx - 1) // 2
             self.tree[idx] += change
 
     def _retrieve(self, idx, s):
-        # We'll use a loop here for the same reason as _propagate
         while idx < self.capacity - 1:
             left_child = 2 * idx + 1
             if s <= self.tree[left_child]:

@@ -6,17 +6,10 @@ import torch
 from utils.sum_tree import SumTree, RainbowSumTree, RainbowSumTreeGPU
 
 class ReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
+    """Buffer to store experience tuples"""
 
     def __init__(self, buffer_size, batch_size, seed, device):
-        """Initialize a ReplayBuffer object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-            seed (int): random seed
-            device (string): GPU or CPU
-        """
+        """Initialize a ReplayBuffer object"""
 
         self.memory = deque(maxlen=buffer_size)  
         self.batch_size = batch_size
@@ -25,16 +18,15 @@ class ReplayBuffer:
         self.device = device
     
     def add(self, state, action, reward, next_state, done):
-        """Add a new experience to memory."""
+        """Add a new experience to memory"""
         e = self.experience(state, action, reward, next_state, done)
         self.memory.append(e)
     
     def sample(self):
-        """Randomly sample a batch of experiences from memory."""
+        """Randomly sample a batch of experiences from memory"""
         experiences = random.sample(self.memory, k=self.batch_size)
 
         #first_state = experiences[0].state
-
         #if isinstance(first_state, torch.Tensor): # GPU Version
         states = torch.stack([e.state for e in experiences]).float().to(self.device)
         actions = torch.tensor([e.action for e in experiences], device=self.device, dtype=torch.long)
@@ -53,23 +45,15 @@ class ReplayBuffer:
         return (states, actions, rewards, next_states, dones)
 
     def __len__(self):
-        """Return the current size of internal memory."""
+        """Return the current size of internal memory"""
         return len(self.memory)
 
 
 class OldPERBuffer:
-    """Prioritized Experience Replay (PER) buffer."""
+    """Old Implementation of a Prioritized Experience Replay (PER) buffer"""
 
     def __init__(self, buffer_size, batch_size, seed, device, alpha=0.6):
-        """Initialize a ReplayBufferPER object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-            seed (int): random seed
-            device (string): GPU or CPU
-            alpha (float): prioritization exponent (0 = uniform, 1 = full prioritization)
-        """
+        """Initialize a ReplayBufferPER object"""
         self.memory = deque(maxlen=buffer_size)
         self.priorities = np.zeros((buffer_size,), dtype=np.float32)
         self.batch_size = batch_size
@@ -81,7 +65,7 @@ class OldPERBuffer:
         self.position = 0
     
     def add(self, state, action, reward, next_state, done, td_error=None):
-        """Add a new experience to memory with max priority."""
+        """Add a new experience to memory with max priority"""
         ##max_priority = self.priorities.max() if self.memory else 1.0
         experience = self.experience(state, action, reward, next_state, done)
         
@@ -100,7 +84,7 @@ class OldPERBuffer:
         self.position = (self.position + 1) % self.memory.maxlen
     
     def sample(self, beta=0.4):
-        """Sample a batch of experiences based on priority."""
+        """Sample a batch of experiences based on priority"""
         if len(self.memory) == 0:
             return [], [], [], [], []
 
@@ -113,7 +97,7 @@ class OldPERBuffer:
         
         # Check for NaN or Inf in the probabilities
         if np.isnan(probs).any() or np.isinf(probs).any():
-            print("Warning: NaN or Inf found in probabilities!")
+            print("Warning: NaN or Inf found in probabilities")
             probs = np.ones_like(probs) / len(probs)  # Fallback to uniform distribution
 
         indices = np.random.choice(len(self.memory), self.batch_size, p=probs)
@@ -139,7 +123,7 @@ class OldPERBuffer:
 
     
     def update_priorities(self, indices, td_errors):
-        """Update priorities based on TD-error."""
+        """Update priorities based on TD-error"""
         if isinstance(td_errors, torch.Tensor):
             td_errors = td_errors.detach().cpu().numpy()
 
@@ -148,22 +132,15 @@ class OldPERBuffer:
 
     
     def __len__(self):
-        """Return the current size of internal memory."""
+        """Return the current size of internal memory"""
         return len(self.memory)
 
 
 class AsyncReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
+    """Async Version of the Replay Buffer"""
 
     def __init__(self, buffer_size, batch_size, seed, device):
-        """Initialize a ReplayBuffer object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-            seed (int): random seed
-            device (string): GPU or CPU
-        """
+        """Initialize a ReplayBuffer object"""
 
         self.memory = deque(maxlen=buffer_size)  
         self.batch_size = batch_size
@@ -172,15 +149,16 @@ class AsyncReplayBuffer:
         self.device = device
     
     def add(self, state, action, reward, next_state, done):
-        """Add a new experience to memory."""
+        """Add a new experience to memory"""
         e = self.experience(state, action, reward, next_state, done)
         self.memory.append(e)
     
     def sample(self):
-        """Randomly sample a batch of experiences from memory."""
+        """Randomly sample a batch of experiences from memory"""
         experiences = random.sample(self.memory, k=self.batch_size)
         first_state = experiences[0].state
 
+        # Old CPU and GPU Versions (Without if statement)
         """
         states = torch.stack([e.state for e in experiences if e is not None]).float()
         states = states.cpu().numpy()  # Move to CPU before converting to numpy
@@ -237,18 +215,10 @@ class AsyncReplayBuffer:
 
 
 class AsyncRamReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
+    """Async + RAM Version of the Replay Buffer"""
 
     def __init__(self, buffer_size, batch_size, seed, device):
-        """Initialize a ReplayBuffer object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-            seed (int): random seed
-            device (string): GPU or CPU
-        """
-
+        """Initialize a ReplayBuffer object"""
         self.memory = deque(maxlen=buffer_size)  
         self.batch_size = batch_size
         self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
@@ -256,13 +226,12 @@ class AsyncRamReplayBuffer:
         self.device = device
     
     def add(self, state, action, reward, next_state, done):
-        """Add a new experience to memory."""
+        """Add a new experience to memory"""
         e = self.experience(state, action, reward, next_state, done)
         self.memory.append(e)
     
     def sample(self):
-        """Randomly sample a batch of experiences from memory."""
-
+        """Randomly sample a batch of experiences from memory"""
         experiences = random.sample(self.memory, k=self.batch_size)
 
         states = torch.tensor(np.stack([e.state for e in experiences]), dtype=torch.float32, device=self.device)
@@ -274,13 +243,15 @@ class AsyncRamReplayBuffer:
         return (states, actions, rewards, next_states, dones)
 
     def __len__(self):
-        """Return the current size of internal memory."""
+        """Return the current size of internal memory"""
         return len(self.memory)
 
 
 class PERBuffer:
-    """Prioritized Experience Replay Buffer"""
+    """Prioritized Experience Replay (PER) Buffer"""
+
     def __init__(self, buffer_size, batch_size, seed, device, alpha=0.6, beta=0.4, beta_increment=0.001):
+        """Initialize a ReplayBufferPER object"""
         self.tree = SumTree(buffer_size)
         self.buffer_size = buffer_size
         self.batch_size = batch_size
@@ -296,7 +267,7 @@ class PERBuffer:
         self.max_priority = 1.0 # Maximum priority for new experiences
         
     def add(self, max_priority, state, action, reward, next_state, done):
-
+        """Add a new experience to memory with max priority"""
         self.max_priority = max_priority
 
         state = torch.tensor(state, dtype=torch.float32) if not isinstance(state, torch.Tensor) else state.detach()
@@ -311,6 +282,7 @@ class PERBuffer:
         self.tree.add(priority ** self.alpha, experience)
     
     def sample(self):
+        """Sample a batch of experiences based on priority"""
         experiences = []
         indices = []
         priorities = []
@@ -334,7 +306,7 @@ class PERBuffer:
                 indices.append(idx)
                 priorities.append(priority)
         
-        # Convert to tensors
+        # Old Tensor Conversion Version
         """
         states = torch.from_numpy(np.array([e.state for e in experiences])).float().to(self.device)
         actions = torch.from_numpy(np.array([e.action for e in experiences])).long().to(self.device)
@@ -376,7 +348,10 @@ class PERBuffer:
         return self.tree.n_entries
 
 class ComplexPERBuffer:
+    """Complex Prioritized Experience Replay (PER) Buffer with dual buffers"""
+
     def __init__(self, buffer_size, batch_size, seed, device, reward_threshold=100, alpha=0.6, beta_start=0.4, beta_frames=100000):
+        """Initialize a ReplayBufferPER object"""
         self.buffer_size = buffer_size
         self.batch_size = batch_size
         self.device = device
@@ -398,6 +373,7 @@ class ComplexPERBuffer:
         self.experience = namedtuple("Experience", ["state", "action", "reward", "next_state", "done", "episode_reward"])
 
     def add(self, state, action, reward, next_state, done, episode_reward=0):
+        """Add a new experience to memory"""
         experience = self.experience(state, action, reward, next_state, done, episode_reward)
         max_priority_high = max(self.high_reward_priorities) if self.high_reward_priorities else 1.0
         max_priority_normal = max(self.normal_priorities) if self.normal_priorities else 1.0
@@ -416,6 +392,7 @@ class ComplexPERBuffer:
                 self.normal_priorities.pop(0)
 
     def _sample_prioritized(self, buffer, priorities, sample_size):
+        """Sample experiences from a given buffer based on priorities"""
         if len(buffer) == 0:
             return [], [], []
 
@@ -437,6 +414,7 @@ class ComplexPERBuffer:
         return experiences, indices, weights
 
     def sample(self):
+        """Sample a batch of experiences from both buffers"""
         high_sample_size = min(int(self.batch_size * 0.6), len(self.high_reward_buffer))
         normal_sample_size = self.batch_size - high_sample_size
 
@@ -477,6 +455,7 @@ class ComplexPERBuffer:
         return (states, actions, rewards, next_states, dones, indices, weights)
 
     def update_priorities(self, indices, priorities):
+        """Update priorities based on TD errors"""
         high_len = len(self.high_reward_buffer)
         for idx, prio in zip(indices, priorities):
             if idx < high_len:
@@ -491,16 +470,18 @@ class ComplexPERBuffer:
     
 
 class SACReplayBuffer:
-    """Replay buffer to store and sample experiences."""
+    """Replay buffer to store and sample experiences for SAC algorithm"""
+
     def __init__(self, capacity):
+        """Initialize a SACReplayBuffer object"""
         self.buffer = deque(maxlen=capacity)
 
     def add(self, state, action, reward, next_state, done):
-        # Store as NumPy arrays (uint8 for states)
+        """Add a new experience to memory"""
         self.buffer.append((state, action, reward, next_state, done))
 
     def sample(self, batch_size):
-        # Sample a batch of tuples
+        """Sample a batch of experiences"""
         batch = random.sample(self.buffer, batch_size)
 
         # Convert the batch of NumPy arrays to a batch of PyTorch tensors
@@ -520,7 +501,10 @@ class SACReplayBuffer:
     
 
 class RainbowPERBuffer:
+    """Rainbow Prioritized Experience Replay (PER) Buffer"""
+
     def __init__(self, capacity, alpha=0.6, beta_start=0.4, beta_frames=100000):
+        """Initialize a RainbowPERBuffer object"""
         self.tree = RainbowSumTree(capacity)
         self.capacity = capacity
         self.alpha = alpha
@@ -531,10 +515,12 @@ class RainbowPERBuffer:
         self.max_priority = 1.0
 
     def add(self, state, action, reward, next_state, done):
+        """Add a new experience to memory with max priority"""
         transition = (state, action, reward, next_state, done)
         self.tree.add(self.max_priority, transition)
 
     def sample(self, batch_size):
+        """Sample a batch of experiences based on priority"""
         assert self.tree.n_entries >= batch_size
         
         batch_indices = np.zeros(batch_size, dtype=np.int32)
@@ -570,6 +556,7 @@ class RainbowPERBuffer:
         return batch_indices, states, actions, rewards, next_states, dones, weights
 
     def update_priorities(self, indices, td_errors):
+        """Update priorities based on TD errors"""
         for idx, td_error in zip(indices, td_errors):
             priority = (abs(td_error) + 1e-5)**self.alpha
             self.tree.update(idx, priority)
@@ -580,7 +567,10 @@ class RainbowPERBuffer:
     
 
 class DrQv2Buffer:
+    """DrQv2 Replay Buffer"""
+
     def __init__(self, capacity, state_shape=(4, 84, 84), device='cuda'):
+        """Initialize a DrQv2Buffer object"""
         self.capacity = capacity
         self.device = device
         self.state_shape = state_shape
@@ -595,6 +585,7 @@ class DrQv2Buffer:
         self.size = 0
         
     def add(self, state, action, reward, next_state, done):
+        """Add a new experience to memory"""
         self.states[self.pos].copy_(torch.from_numpy((state * 255).astype(np.uint8)).to(self.device))
         self.actions[self.pos] = action
         self.rewards[self.pos] = reward
@@ -605,6 +596,7 @@ class DrQv2Buffer:
         self.size = min(self.size + 1, self.capacity)
     
     def sample(self, batch_size):
+        """Sample a batch of experiences"""
         if self.size < batch_size:
             return None
             
@@ -623,6 +615,8 @@ class DrQv2Buffer:
     
 
 class RainbowPERBufferGPU:
+    """Rainbow Prioritized Experience Replay (PER) Buffer with GPU acceleration"""
+
     def __init__(self, capacity, device, alpha=0.6, beta_start=0.4, beta_frames=100000):
         self.device = device
         self.capacity = capacity
@@ -633,46 +627,39 @@ class RainbowPERBufferGPU:
         self.frame = 0
         self.max_priority = 1.0
         
-        # We will use the CPU-based SumTree for simplicity, but the main
-        # logic will be vectorized here.
         self.tree = RainbowSumTreeGPU(capacity, device)
 
     def add(self, state, action, reward, next_state, done):
-        # Data is stored as Python objects, not tensors in this conceptual version
-        # to avoid complex memory management. A full implementation would
-        # store these in large tensors to reduce overhead.
+        """Add a new experience to memory with max priority"""
         transition = (state, action, reward, next_state, done)
         self.tree.add(self.max_priority, transition)
 
     def sample(self, batch_size):
+        """Sample a batch of experiences based on priority"""
         assert self.tree.n_entries >= batch_size
-        
-        # All calculations for sampling and weights are now vectorized
-        # and use PyTorch tensors.
         
         # Calculate current beta and total priority
         self.beta = min(1.0, self.beta_start + self.frame * (1.0 - self.beta_start) / self.beta_frames)
         self.frame += 1
         total_priority = self.tree.total_priority()
 
-        # Generate random numbers for each segment, on the GPU
+        # Generate random numbers for each segment
         segment = total_priority / batch_size
         s_values = torch.linspace(0, batch_size - 1, batch_size, device=self.device) * segment
         s_values += torch.rand(batch_size, device=self.device) * segment
 
-        # Loop through the tree to retrieve indices. This is the bottleneck.
+        # Loop through the tree to retrieve indices
         batch_indices = []
         batch_priorities = []
         batch_experiences = []
         
-        # This part is still sequential on the CPU, but it's a small part of the overall logic
         for s in s_values.cpu().tolist():
             idx, priority, data = self.tree.get(s)
             batch_indices.append(idx)
             batch_priorities.append(priority)
             batch_experiences.append(data)
 
-        # Convert everything back to tensors for the learn step, on the GPU
+        # Convert everything to tensors
         batch_indices_tensor = torch.tensor(batch_indices, dtype=torch.long, device=self.device)
         batch_priorities_tensor = torch.tensor(batch_priorities, dtype=torch.float32, device=self.device)
 
@@ -681,10 +668,8 @@ class RainbowPERBufferGPU:
         weights = (self.tree.n_entries * probs)**(-self.beta)
         weights /= weights.max()
         
-        # Unzip the batch experiences (they are Python objects on the CPU)
         states, actions, rewards, next_states, dones = zip(*batch_experiences)
 
-        # Stack them into a single tensor on the GPU
         states = torch.stack(list(states), dim=0).to(self.device)
         actions = torch.stack(list(actions), dim=0).to(self.device)
         rewards = torch.stack(list(rewards), dim=0).to(self.device)
@@ -694,16 +679,14 @@ class RainbowPERBufferGPU:
         return batch_indices_tensor, states, actions, rewards, next_states, dones, weights
 
     def update_priorities(self, indices, td_errors):
-        # This is where we can fully vectorize the update!
-        
-        # Ensure indices and errors are on the same device as the tree
-        indices_cpu = indices.cpu().tolist() # Tree is on CPU in this example
+        """Update priorities of sampled transitions"""
+
+        indices_cpu = indices.cpu().tolist()
         
         # Calculate new priorities
         new_priorities = (td_errors.abs() + 1e-5)**self.alpha
         
-        # Loop over items and update tree.
-        # This is another bottleneck that would need a CUDA kernel.
+        # Loop over items and update tree
         for idx, new_p in zip(indices_cpu, new_priorities.cpu().tolist()):
             self.tree.update(idx, new_p)
 

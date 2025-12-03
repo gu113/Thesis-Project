@@ -1,5 +1,6 @@
 import gymnasium as gym
 
+# Fire Reset Wrapper
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -8,8 +9,10 @@ class FireResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs, _, terminated, truncated, _ = self.env.step(self.fire_action)
+
+        obs, _, terminated, truncated, _ = self.env.step(self.fire_action) # Take FIRE action
         if terminated or truncated:
             obs, info = self.env.reset(**kwargs)
+            
         return obs, info
     
