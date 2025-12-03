@@ -3,5 +3,8 @@ trained_models
 .pth
 
 # Ignore Python cache
-__pycache__
-.pyc
+__pycache__/
+**/*.pyc
+
+# Ignore .vscode folder
+.vscode/
