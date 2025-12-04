@@ -39,7 +39,7 @@ ACTION_SIZE = env.action_space.n
 GAMMA = 0.99                        # Discount factor
 BUFFER_SIZE = 200000                # Rainbow paper default: 1M (for PER)
 BATCH_SIZE = 32                     # Rainbow paper default: 32
-LR = 0.0000625                         # Rainbow paper default: 6.25e-5
+LR = 0.0000625                      # Rainbow paper default: 6.25e-5
 
 # Rainbow Specific Hyperparameters
 TARGET_UPDATE_FREQ = 2000           # How often to update target network (in agent steps)
@@ -77,12 +77,10 @@ def train(n_episodes):
 
     for i_episode in range(1, n_episodes + 1):
         
-        # Reset env and get first observation as a normalized NumPy array on the CPU
+        # Reset env and get first observation as a normalized NumPy array
         observation_np, _ = env.reset()
         observation_normalized = observation_np.astype(np.float32) / 255.0
         
-        # We only need a tensor for the agent's action selection
-        # This is the only place we need to send data to the GPU in the loop
         observation_tensor = torch.from_numpy(observation_normalized).to(device)
 
         score = 0
@@ -98,17 +96,16 @@ def train(n_episodes):
             with torch.amp.autocast(device_type="cuda"):
                 action = agent.choose_action(observation_tensor)
             
-            # Step the environment. This takes 4 game frames.
+            # Step the environment
             next_observation_np, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             
-            # Process the new observation (CPU)
+            # Process the new observation
             next_observation_normalized = next_observation_np.astype(np.float32) / 255.0
             
-            # Agent steps, adding the transition to the CPU buffer
+            # Add the transition to the buffer
             agent.step(observation_normalized, action, reward, next_observation_normalized, done) 
 
-            # Agent learns (if enough steps have passed)
             if total_frames > agent.learning_starts:
                 loss_value = None
                 with torch.amp.autocast(device_type="cuda"):
@@ -120,10 +117,10 @@ def train(n_episodes):
             # Update for next loop iteration
             observation_normalized = next_observation_normalized
 
-            # Create a new tensor for the next action choice (GPU)
+            # Create a new tensor for the next action choice
             observation_tensor = torch.from_numpy(observation_normalized).to(device)
             
-            total_frames += 4 # This is key, we've processed 4 frames
+            total_frames += 4
             
             score += reward
             original_score = info['original_score']
@@ -147,20 +144,21 @@ def train(n_episodes):
         if i_episode % 10 == 0:
             print(f"Episode {i_episode:5d} | Avg Score: {np.mean(scores_window):.2f} | Avg Original Score: {np.mean(original_score_window):.2f}")
             
-            
+    
+    # End Timing
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"\nTotal Training Time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
     print(f"Highest Score Achieved: {best_score}")
     print(f"Highest Original Score Achieved: {original_best_score}")
 
-    if i_episode % n_episodes == 0:
-                plot_scores(episode_rewards[-1000:], i_episode)
+    # Plot Scores
+    plot_scores(episode_rewards[-1000:], i_episode)
 
     return scores
 
 # Run Training
 train(n_episodes=1000)
-save_agent_rdqn(agent, 'trained_models/Breakout_RDQN.pth')
+#save_agent_rdqn(agent, 'trained_models/Breakout_RDQN.pth')
 
 env.close()

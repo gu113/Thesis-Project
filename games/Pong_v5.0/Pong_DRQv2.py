@@ -14,6 +14,7 @@ from agents.drqv2_agent import DrQv2Agent
 
 # Import Utils
 from utils.save_load import save_agent, load_agent
+from utils.plots import plot_scores_pong
 
 # Import Custom Wrappers
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
@@ -27,22 +28,12 @@ env = FrameStackObservation(env, stack_size=4)
 env = FireResetEnv(env)
 env = PongScoreWrapper(env)
 
+PONG_MAX_SCORE = 11
+
 # Set up Device
 print(f"CUDA: {torch.cuda.is_available()}")
 print(f"GPU: {torch.cuda.get_device_name(0)}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-"""
-def plot_scores(scores, episode_num):
-    plt.figure(figsize=(10, 6))
-    plt.plot(scores)
-    plt.title(f'Training Progress - Episodes {episode_num-len(scores)+1} to {episode_num}')
-    plt.xlabel('Episode')
-    plt.ylabel('Score')
-    plt.grid(True)
-    plt.savefig(f'training_progress_{episode_num}.png')
-    plt.close()
-"""
 
 # Hyperparameters
 INPUT_SHAPE = (4, 84, 84)
@@ -71,11 +62,12 @@ def train(n_episodes):
     agent_scores = []
     opponent_scores = []
     best_score = 0
+    worst_opponent_score = PONG_MAX_SCORE
 
     # Score Windows for Averages
-    score_window = deque(maxlen=10)
-    agent_score_window = deque(maxlen=10)
-    opponent_score_window = deque(maxlen=10)
+    score_window = deque(maxlen=100)
+    agent_score_window = deque(maxlen=100)
+    opponent_score_window = deque(maxlen=100)
 
 
     for i_episode in range(1, n_episodes + 1):
@@ -132,24 +124,23 @@ def train(n_episodes):
         print(f"Episode {i_episode:5d} | Agent - {agent_score} x {opponent_score} - Opponent")
 
         # Track High Scores
-        if agent_score > best_score:
+        if agent_score > best_score or opponent_score < worst_opponent_score:
             best_score = agent_score
+            worst_opponent_score = opponent_score
             print(f"New Highscore | Agent - {agent_score} x {opponent_score} - Opponent on episode {i_episode}")
 
         # Print Progress
-        if i_episode % 10 == 0:
-            print(f"Episode {i_episode:5d} | Avg Agent Score: {np.mean(agent_score_window):.2f} x Avg Opponent Score: {np.mean(opponent_score_window)}")
-            
-            """
-            # Plot Progress
-            if i_episode % n_episodes == 0:
-                plot_scores(episode_rewards[-1000:], i_episode)
-            """
+        if i_episode % 100 == 0 or i_episode % 250 == 0:
+            print(f"Episode {i_episode:5d} | Avg Agent Score: {np.mean(agent_score_window):.2f} x Avg Opponent Score: {np.mean(opponent_score_window):.2f}")
 
     # End Timing
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"\nTotal Training Time: {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    print(f"Highest Score Achieved: Agent - {best_score} x {worst_opponent_score} - Opponent")
+
+    # Plot Progress
+    plot_scores_pong(agent_scores[-2500:], opponent_scores[-2500:], i_episode)
 
     return scores
 

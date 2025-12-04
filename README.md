@@ -1,42 +1,57 @@
 # Learning On-device for Autonomous Game Playing
-Repository for the Thesis Project "Learning On-device for Autonomous Game Playing" developed by Gonçalo Fernandes (Student at ISEL)
+
+Repository for the Thesis Project "Learning On-device for Autonomous Game Playing" developed by **Gonçalo Fernandes** (Student at ISEL).
+
+---
+
+## 💡 Overview
+This project investigates the deployment of **Deep Reinforcement Learning (DRL)** algorithms on embedded devices to play classic **Atari games**.
 
 ## Repository Structure
 ```
 Learning-On-device-for-Autonomous-Game-Playing/
 ├── agents/               # Agent Implementations
 ├── games/                # Executable Game Versions
+├── images/               # Generated Plots
 ├── models/               # Neural Network Model Architectures
-├── rewards/              # Custom Reward Wrappers
-└── utils/                # Buffers, Frame Preprocessing and Stacking Functions
+├── utils/                # Saving/Loading, Buffer, Plotting and Stacking Functions
+└── wrappers/             # Reward and Reset Wrapper Functions
 ```
 
-## How to Run
+## 🛠 Installation
 
 ### Requirements:
 
-Recommended Version: Python 3.12.0
+* **Recommended Python Version:** Python 3.12.0
 
-Required Python Packages:
+### Setup Steps
 
-```
-pip install torch torchvision torchaudio
-pip install gymnasium[atari]
-pip install gymnasium[other]
-pip install gym
-pip install ale-py
-pip install numpy==1.26.4
-pip install pygame
-```
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/gu113/Thesis-Project](https://github.com/gu113/Thesis-Project)
+    ```
+
+    ```
+3.  **Install the required packages** using the `requirements.txt` file:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+---
 
 ### Execution Steps
 
 1. Open the games/ Folder
-2. Choose the Desired Game Version
-3. Run the Game Version
-4. Watch the AI Scores
+2. Choose the Desired Game Version and Algorithm
+3. Execute the Game
+4. Observe the Scores Obtained by the AI
+5. Inspect the Plots
 
 
-# License
+## 📝 License & Citation
 
-This repository is for academic and research purposes only. If you use this code for your own work, please credit this repository accordingly.
+This repository is licensed under the **MIT License**.
+
+This repository is for academic and research purposes. If you use this code for your own work, please cite the associated thesis:
+
+> **Fernandes, Gonçalo (2025).** *Learning On-device for Autonomous Game Playing* Master's Thesis, Instituto Superior de Engenharia de Lisboa (ISEL).

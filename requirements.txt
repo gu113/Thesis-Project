@@ -1,0 +1,9 @@
+torch
+torchvision
+torchaudio
+gymnasium[atari]
+gymnasium[other]
+gym
+ale-py
+numpy==1.26.4
+pygame
